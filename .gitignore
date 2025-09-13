@@ -1,0 +1,4 @@
+.*venv/
+__pycache__/
+backend/api_keys.json
+models/

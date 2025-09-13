@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Car Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            overflow: hidden;
+        }
+        
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #333;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 5px;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+        
+        button.active {
+            background: #2196F3;
+        }
+        
+        #status {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            font-size: 14px;
+        }
+        
+        #debug {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #ff0000;
+            font-size: 12px;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container">
+        <div id="controls">
+            <div class="control-group">
+                <label>Control Mode:</label>
+                <button id="ai-mode" class="active">AI Mode</button>
+                <button id="manual-mode">Manual Mode</button>
+            </div>
+            
+            <div class="control-group">
+                <label>AI Commands:</label>
+                <button id="go-room-a">Go to GEMC</button>
+                <button id="go-room-b">Go to Fites</button>
+                <button id="go-room-c">Go to SERF</button>
+                <button id="test-sequence">Test Sequence</button>
+                <button id="stop-ai">Stop AI</button>
+                <button id="clear-queue">Clear Queue</button>
+            </div>
+            
+            <div class="control-group">
+                <label>Connection:</label>
+                <button id="connect-ws">Connect WebSocket</button>
+                <button id="disconnect-ws">Disconnect</button>
+            </div>
+            
+            <div id="status">
+                Mode: AI Mode<br>
+                WebSocket: Disconnected<br>
+                Queue: Empty<br>
+                Status: Ready
+            </div>
+        </div>
+        
+        <div id="instructions">
+            <strong>Controls:</strong><br>
+            <strong>AI Mode:</strong> Robot follows AI commands<br>
+            <strong>Manual Mode:</strong> Use WASD keys to drive<br>
+            <strong>W:</strong> Forward, <strong>S:</strong> Backward<br>
+            <strong>A:</strong> Left, <strong>D:</strong> Right
+        </div>
+        
+        <div id="debug" style="display: none;">
+            <strong>Debug Info:</strong><br>
+            <div id="debug-content">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Try multiple Three.js sources for reliability -->
+    <script>
+        // Debug function
+        function debugLog(message) {
+            const debugContent = document.getElementById('debug-content');
+            if (debugContent) {
+                debugContent.innerHTML += message + '<br>';
+            }
+            console.log(message);
+        }
+        
+        // Check if Three.js loaded
+        function checkThreeJS() {
+            if (typeof THREE !== 'undefined') {
+                debugLog('Three.js loaded successfully!');
+                return true;
+            } else {
+                debugLog('Three.js not loaded yet...');
+                return false;
+            }
+        }
+        
+        // Load Three.js with fallback
+        function loadThreeJS() {
+            debugLog('Attempting to load Three.js...');
+            
+            // Try first source
+            const script1 = document.createElement('script');
+            script1.src = 'https://unpkg.com/three@0.158.0/build/three.min.js';
+            script1.onload = function() {
+                debugLog('Three.js loaded from unpkg.com');
+                if (checkThreeJS()) {
+                    loadModules();
+                }
+            };
+            script1.onerror = function() {
+                debugLog('Failed to load from unpkg.com, trying cdnjs...');
+                
+                // Try second source
+                const script2 = document.createElement('script');
+                script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r158/three.min.js';
+                script2.onload = function() {
+                    debugLog('Three.js loaded from cdnjs.cloudflare.com');
+                    if (checkThreeJS()) {
+                        loadModules();
+                    }
+                };
+                script2.onerror = function() {
+                    debugLog('Failed to load Three.js from all sources!');
+                    document.getElementById('debug-content').innerHTML += '<span style="color: yellow;">ERROR: Three.js failed to load!</span><br>';
+                };
+                document.head.appendChild(script2);
+            };
+            document.head.appendChild(script1);
+        }
+        
+        // Load all modules in order
+        function loadModules() {
+            debugLog('Loading modules...');
+            
+            // Load pathfinding module first
+            loadScript('js/pathfinding.js', () => {
+                debugLog('Pathfinding module loaded');
+                
+                // Load building generator
+                loadScript('js/building-generator.js', () => {
+                    debugLog('Building generator module loaded');
+                    
+                    // Load robot controller
+                    loadScript('js/robot-controller.js', () => {
+                        debugLog('Robot controller module loaded');
+                        
+                        // Load WebSocket manager
+                        loadScript('js/websocket-manager.js', () => {
+                            debugLog('WebSocket manager module loaded');
+                            
+                            // Finally load main simulation
+                            loadScript('js/simulation.js', () => {
+                                debugLog('All modules loaded!');
+                                startSimulation();
+                            });
+                        });
+                    });
+                });
+            });
+        }
+        
+        // Helper function to load scripts
+        function loadScript(src, callback) {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = callback;
+            script.onerror = function() {
+                debugLog('Failed to load: ' + src);
+            };
+            document.head.appendChild(script);
+        }
+        
+        // Start simulation after all modules are loaded
+        function startSimulation() {
+            setTimeout(() => {
+                if (typeof RobotCarSimulation !== 'undefined') {
+                    debugLog('RobotCarSimulation class found, creating instance...');
+                    try {
+                        new RobotCarSimulation();
+                        debugLog('Simulation started successfully!');
+                    } catch (error) {
+                        debugLog('Error starting simulation: ' + error.message);
+                        console.error('Error starting simulation:', error);
+                    }
+                } else {
+                    debugLog('RobotCarSimulation class not found!');
+                    console.error('RobotCarSimulation class not found!');
+                }
+            }, 100);
+        }
+        
+        // Start loading process
+        window.addEventListener('load', function() {
+            debugLog('Page loaded, starting Three.js load...');
+            loadThreeJS();
+        });
+    </script>
+</body>
+</html>
