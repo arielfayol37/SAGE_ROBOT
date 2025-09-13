@@ -1,0 +1,17 @@
+{
+  "name": "robot-car-simulation",
+  "version": "1.0.0",
+  "description": "3D robot car simulation for testing AI planning",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8001",
+    "dev": "python -m http.server 8001"
+  },
+  "dependencies": {
+    "three": "^0.158.0"
+  },
+  "devDependencies": {},
+  "keywords": ["3d", "simulation", "robot", "ai", "planning"],
+  "author": "",
+  "license": "MIT"
+}
