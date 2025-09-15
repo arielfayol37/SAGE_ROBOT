@@ -1,33 +1,178 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+  <title>Teleop Turtle (Mobile + Desktop)</title>
+  <style>
+    :root { --joy-size: 140px; --joy-knob: 70px; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 12px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0b0c10; color: #e5e7eb;
+      /* allow scrolling on mobile when rotated */
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    h2 { margin: 4px 0 8px; }
+    #status { display: inline-block; padding: 4px 10px; border-radius: 10px; background: #1f2937; }
+
+    /* Camera: responsive, never taller than the viewport; no cropping */
+    #cam {
+      display: block;
+      width: 100%;
+      height: auto;                 /* keep aspect */
+      max-height: 75svh;            /* cap to small-viewport height on mobile */
+      object-fit: contain;          /* no top/bottom crop */
+      margin: 10px auto;
+      background:#000; border: 1px solid #374151; border-radius: 10px;
+    }
+
+    .hud { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0 10px; }
+    .row { display:flex; justify-content:center; }
+
+    /* Joystick (captures touch, but only here) */
+    .joystick {
+      position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0));
+      width: var(--joy-size); height: var(--joy-size);
+      border-radius: 50%; background: rgba(31,41,55,0.6); border: 1px solid #374151;
+      touch-action: none; backdrop-filter: blur(4px);
+    }
+    .knob {
+      position: absolute; left: 50%; top: 50%;
+      width: var(--joy-knob); height: var(--joy-knob);
+      margin-left: calc(var(--joy-knob) / -2); margin-top: calc(var(--joy-knob) / -2);
+      border-radius: 50%; background: rgba(99,102,241,0.9); border: 2px solid rgba(255,255,255,0.15);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+      touch-action: none;
+    }
+    .stop {
+      position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0));
+      padding: 14px 18px; border-radius: 12px; border: 1px solid #ef4444; color:#fff;
+      background: #dc2626; font-weight: 700;
+    }
+    @media (min-width: 900px) {
+      :root { --joy-size: 160px; --joy-knob: 80px; }
+      #cam { max-height: 80vh; }    /* bigger cap on desktop */
+    }
+  </style>
+</head>
 <body>
-<h2>Teleop Turtle</h2>
-<p id="status">Connecting…</p>
+  <h2>Teleop Turtle</h2>
+  <div class="hud">
+    <span id="status">Connecting…</span>
+  </div>
+
+  <!-- Live camera (MJPEG) -->
+  <img id="cam" alt="camera" />
+
+  <!-- On-screen joystick -->
+  <div class="joystick" id="joy">
+    <div class="knob" id="knob"></div>
+  </div>
+  <button class="stop" id="stopBtn" aria-label="Emergency stop">STOP</button>
+
 <script>
-const ws = new WebSocket("ws://" + location.hostname + ":8765");
+(() => {
+  const HOST = location.hostname || "JETSON_IP_HERE"; // e.g. "192.168.1.50"
 
-ws.onopen = () => {
-  ws.send(JSON.stringify({ role: "browser" }));   // 👈 send role hello
-  document.getElementById('status').textContent = "Connected";
-};
+  // --- Camera stream ---
+  const cam = document.getElementById('cam');
+  // Pick a resolution/aspect that matches your camera to reduce buffering.
+  cam.src = "http://" + HOST + ":8080/stream?topic=/image_raw&type=mjpeg&width=480&height=270&quality=80";
 
-ws.onclose = () => document.getElementById('status').textContent = "Disconnected";
-ws.onerror = () => document.getElementById('status').textContent = "Error (see server logs)";
+  // --- Teleop WebSocket ---
+  const ws = new WebSocket("ws://" + HOST + ":8765");
+  const statusEl = document.getElementById('status');
 
-document.addEventListener("keydown", e => {
-  // keep focus and avoid page scrolling on arrows
-  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) e.preventDefault();
+  ws.onopen = () => { ws.send(JSON.stringify({ role: "browser" })); statusEl.textContent = "Connected"; };
+  ws.onclose = () => statusEl.textContent = "Disconnected";
+  ws.onerror  = () => statusEl.textContent = "Error (see server logs)";
 
-  let x = 0, z = 0;
-  if (e.key === "ArrowUp") x = 2.0;
-  if (e.key === "ArrowDown") x = -2.0;
-  if (e.key === "ArrowLeft") z = 2.0;
-  if (e.key === "ArrowRight") z = -2.0;
-
-  if (ws.readyState === WebSocket.OPEN) {
+  let lastX = 0, lastZ = 0;
+  function send(x, z) {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (Math.abs(x - lastX) < 1e-3 && Math.abs(z - lastZ) < 1e-3) return;
     ws.send(JSON.stringify({ type: "control", x, z }));
+    lastX = x; lastZ = z;
   }
-});
+
+  // --- Keyboard (desktop) ---
+  document.addEventListener("keydown", e => {
+    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","w","a","s","d","W","A","S","D"].includes(e.key)) e.preventDefault();
+    let x = 0, z = 0;
+    if (e.key === "ArrowUp" || e.key==="w" || e.key==="W") x = 2.0;
+    if (e.key === "ArrowDown"|| e.key==="s" || e.key==="S") x = -2.0;
+    if (e.key === "ArrowLeft" || e.key==="a" || e.key==="A") z = 2.0;
+    if (e.key === "ArrowRight"|| e.key==="d" || e.key==="D") z = -2.0;
+    if (x !== 0 || z !== 0) send(x, z);
+  });
+  document.addEventListener("keyup", e => {
+    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","w","a","s","d","W","A","S","D"].includes(e.key)) send(0,0);
+  });
+
+  // --- Touch joystick (mobile) ---
+  const joy  = document.getElementById('joy');
+  const knob = document.getElementById('knob');
+
+  let joyActive = false;
+  let joyCenter = { x: 0, y: 0 };
+  const baseR = () => joy.clientWidth / 2;
+  const knobR = () => knob.clientWidth / 2;
+
+  function setKnob(dx, dy) { knob.style.transform = `translate(${dx}px, ${dy}px)`; }
+
+  function touchPoint(e) {
+    const t = (e.touches && e.touches[0]) || e;
+    const rect = joy.getBoundingClientRect();
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+    return { x: t.clientX, y: t.clientY, cx, cy };
+  }
+
+  const MAX_X = 2.0, MAX_Z = 2.0;   // turtlesim-friendly
+
+  let pendingVec = {x:0, z:0};
+  let sendLoop = null;
+  function startSendLoop(){ if (!sendLoop) sendLoop = setInterval(() => send(pendingVec.x, pendingVec.z), 50); } // 20 Hz
+  function stopSendLoop(){ if (sendLoop) { clearInterval(sendLoop); sendLoop = null; } }
+
+  function onStart(e){ e.preventDefault(); joyActive = true; const p = touchPoint(e); joyCenter = { x: p.cx, y: p.cy }; startSendLoop(); }
+  function onMove(e){
+    if (!joyActive) return; e.preventDefault();
+    const p = touchPoint(e);
+    const dx = p.x - joyCenter.x;      // right is +
+    const dy = p.y - joyCenter.y;      // down is +
+
+    const r = baseR() - knobR()/2;
+    const mag = Math.hypot(dx, dy);
+    const cl = mag > r ? r / mag : 1.0;
+    const cdx = dx * cl, cdy = dy * cl;
+
+    setKnob(cdx, cdy);
+
+    // Normalize & map: up->+x, left->+z
+    const nx = cdx / r, ny = cdy / r;
+    pendingVec = { x: MAX_X * (-ny), z: MAX_Z * (-nx) };
+  }
+  function onEnd(e){ e.preventDefault(); joyActive = false; pendingVec = {x:0, z:0}; setKnob(0,0); send(0,0); stopSendLoop(); }
+
+  // Touch + mouse
+  joy.addEventListener('touchstart', onStart, {passive:false});
+  joy.addEventListener('touchmove',  onMove,  {passive:false});
+  joy.addEventListener('touchend',   onEnd,   {passive:false});
+  joy.addEventListener('touchcancel',onEnd,   {passive:false});
+  joy.addEventListener('mousedown', onStart);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onEnd);
+
+  // Big STOP
+  document.getElementById('stopBtn').addEventListener('click', () => { pendingVec = {x:0, z:0}; setKnob(0,0); send(0,0); });
+
+  // Recompute on rotate (some mobile browsers update svh late)
+  window.addEventListener('orientationchange', () => { setTimeout(() => { /* layout recalcs happen via CSS */ }, 150); });
+})();
 </script>
 </body>
 </html>
