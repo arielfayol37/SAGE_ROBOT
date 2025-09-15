@@ -2,3 +2,19 @@
 __pycache__/
 backend/api_keys.json
 models/
+# ROS2 build, install, and log directories (not needed if already ignored by default)
+# Standard ROS2 ignore patterns
+build/
+install/
+log/
+.colcon/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# macOS system files
+.DS_Store
+
+# VS Code settings (optional)
+.vscode/
