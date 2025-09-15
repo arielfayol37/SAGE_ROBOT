@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>Teleop Turtle</h2>
+<p id="status">Connecting…</p>
+<script>
+const ws = new WebSocket("ws://" + location.hostname + ":8765");
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({ role: "browser" }));   // 👈 send role hello
+  document.getElementById('status').textContent = "Connected";
+};
+
+ws.onclose = () => document.getElementById('status').textContent = "Disconnected";
+ws.onerror = () => document.getElementById('status').textContent = "Error (see server logs)";
+
+document.addEventListener("keydown", e => {
+  // keep focus and avoid page scrolling on arrows
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) e.preventDefault();
+
+  let x = 0, z = 0;
+  if (e.key === "ArrowUp") x = 2.0;
+  if (e.key === "ArrowDown") x = -2.0;
+  if (e.key === "ArrowLeft") z = 2.0;
+  if (e.key === "ArrowRight") z = -2.0;
+
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "control", x, z }));
+  }
+});
+</script>
+</body>
+</html>

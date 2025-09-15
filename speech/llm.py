@@ -484,7 +484,7 @@ if __name__ == "__main__":
     engine = GTTSEngine()
     # engine = CoquiEngine()
     #engine.set_voice("Claribel Dervla")
-    stream = TextToAudioStream(engine)
+    stream = TextToAudioStream(engine, frames_per_buffer=1024)
 
     client = openai.OpenAI(api_key=read_openai_key("api_keys.json"))
     funcs = {"update_route": update_route, "cancel_route": cancel_route}
@@ -494,19 +494,19 @@ if __name__ == "__main__":
     threading.Thread(target=robot_watcher, daemon=True).start()
 
     recorder = AudioToTextRecorder(
-        wakeword_backend=["pvporcupine", "openwakeword"][1],
         language="en",
         spinner=True,
-        model=["large-v2", "small.en"][1],
-        device="cuda",
+        model=["large-v2", "tiny.en"][1],
+        device="cpu",
         on_recording_start=set_recording,
         on_recording_stop=unset_recording,
-        openwakeword_model_paths="sage.onnx",
-        openwakeword_inference_framework="onnx",
-        wake_words_sensitivity=0.1,      # try 0.7–0.85 in a school
-        wake_word_buffer_duration=0.75,   # 0.75–1.0s keeps “sage” out of transcript,
-        on_wakeword_detected=on_wakeword,
-        wake_words="sage" # You need to leave this here for openwakeword to work (even though it's not used)
+        # wakeword_backend=["pvporcupine", "openwakeword"][1],
+        # openwakeword_model_paths="sage.onnx",
+        # openwakeword_inference_framework="onnx",
+        # wake_words_sensitivity=0.1,      # try 0.7–0.85 in a school
+        # wake_word_buffer_duration=0.75,   # 0.75–1.0s keeps “sage” out of transcript,
+        # on_wakeword_detected=on_wakeword,
+        # wake_words="sage" # You need to leave this here for openwakeword to work (even though it's not used)
     )
 
     print("Ready to guide Valparaiso University engineering tours...")
@@ -526,6 +526,6 @@ if __name__ == "__main__":
             if stream.is_playing():
                 stream.stop()
             stream.feed(ai_reply)
-            stream.play_async()
+            stream.play()
             print("ai reply: ", ai_reply)
 

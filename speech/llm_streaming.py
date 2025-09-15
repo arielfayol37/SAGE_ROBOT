@@ -10,6 +10,7 @@ import requests
 import openai
 import traceback
 import re
+import torch
 
 # Use your utils if available
 try:
@@ -720,7 +721,7 @@ if __name__ == "__main__":
     except Exception:
         log("⚠️  Coqui/GTTSEngine init failed, falling back to SystemEngine", lvl="WARN")
         engine = SystemEngine()
-    stream = TextToAudioStream(engine)
+    stream = TextToAudioStream(engine, frames_per_buffer=1024)
 
     # ---- OpenAI client ----
     client = openai.OpenAI(api_key=read_openai_key("api_keys.json"))
@@ -729,22 +730,32 @@ if __name__ == "__main__":
     threading.Thread(target=event_dispatcher, daemon=True).start()
     threading.Thread(target=robot_watcher, daemon=True).start()
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    log(f"Using device: {device}")
     # ---- STT init ----
-    recorder = AudioToTextRecorder(
+    USE_WAKEWORD = True
+
+    recorder_kwargs = dict(
         language="en",
         spinner=True,
-        model=["large-v2", "small.en"][1],
-        device="cuda",
+        model=["tiny.en", "small.en"][0],
+        device="cpu",
         on_recording_start=set_recording,
         on_recording_stop=unset_recording,
-        # wakeword_backend=["pvporcupine", "openwakeword"][1],
-        # openwakeword_model_paths="sage.onnx",
-        # openwakeword_inference_framework="onnx",
-        # wake_words_sensitivity=0.5,      # try 0.7–0.85 in a school
-        # wake_word_buffer_duration=0.75,   # 0.75–1.0s keeps “sage” out of transcript,
-        # on_wakeword_detected=on_wakeword,
-        # wake_words="sage" # You need to leave this here for openwakeword to work (even though it's not used)
     )
+
+    if USE_WAKEWORD:
+        recorder_kwargs.update(
+            wakeword_backend=["pvporcupine", "openwakeword"][1],
+            openwakeword_model_paths="sage.onnx",
+            openwakeword_inference_framework="onnx",
+            wake_words_sensitivity=0.5,      # try 0.7–0.85 in a school
+            wake_word_buffer_duration=0.75,  # 0.75–1.0s keeps “sage” out of transcript,
+            on_wakeword_detected=on_wakeword,
+            wake_words="sage"  # You need to leave this here for openwakeword to work (even though it's not used)
+        )
+
+    recorder = AudioToTextRecorder(**recorder_kwargs)
 
     log("Ready to guide tours with streaming TTS…")
 
@@ -764,13 +775,6 @@ if __name__ == "__main__":
 
         if VERBOSE_STT:
             log(f"🗣️  User input: {user_input}")
-
-        # Reset if previous convo marked done
-        if done:
-            with messages_lock:
-                messages.clear()
-            done = False
-
         # Add user message & trim history
         with messages_lock:
             messages.append({"role": "user", "content": user_input})
@@ -782,8 +786,3 @@ if __name__ == "__main__":
         with llm_lock:
             ai_reply, messages = process_by_llm_streaming(messages=messages, tools=tools)
 
-        if "DONE" in ai_reply:
-            ai_reply = ai_reply.replace("DONE", "")
-            done = True
-
-        print(f"assistant: {ai_reply if ai_reply.strip() else '[no content]'}", flush=True)
