@@ -1,177 +1,161 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <title>Teleop Turtle (Mobile + Desktop)</title>
-  <style>
-    :root { --joy-size: 140px; --joy-knob: 70px; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; padding: 12px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: #0b0c10; color: #e5e7eb;
-      /* allow scrolling on mobile when rotated */
-      overflow-y: auto;
-      overscroll-behavior: contain;
-    }
-    h2 { margin: 4px 0 8px; }
-    #status { display: inline-block; padding: 4px 10px; border-radius: 10px; background: #1f2937; }
-
-    /* Camera: responsive, never taller than the viewport; no cropping */
-    #cam {
-      display: block;
-      width: 100%;
-      height: auto;                 /* keep aspect */
-      max-height: 75svh;            /* cap to small-viewport height on mobile */
-      object-fit: contain;          /* no top/bottom crop */
-      margin: 10px auto;
-      background:#000; border: 1px solid #374151; border-radius: 10px;
-    }
-
-    .hud { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0 10px; }
-    .row { display:flex; justify-content:center; }
-
-    /* Joystick (captures touch, but only here) */
-    .joystick {
-      position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0));
-      width: var(--joy-size); height: var(--joy-size);
-      border-radius: 50%; background: rgba(31,41,55,0.6); border: 1px solid #374151;
-      touch-action: none; backdrop-filter: blur(4px);
-    }
-    .knob {
-      position: absolute; left: 50%; top: 50%;
-      width: var(--joy-knob); height: var(--joy-knob);
-      margin-left: calc(var(--joy-knob) / -2); margin-top: calc(var(--joy-knob) / -2);
-      border-radius: 50%; background: rgba(99,102,241,0.9); border: 2px solid rgba(255,255,255,0.15);
-      box-shadow: 0 4px 10px rgba(0,0,0,0.35);
-      touch-action: none;
-    }
-    .stop {
-      position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0));
-      padding: 14px 18px; border-radius: 12px; border: 1px solid #ef4444; color:#fff;
-      background: #dc2626; font-weight: 700;
-    }
-    @media (min-width: 900px) {
-      :root { --joy-size: 160px; --joy-knob: 80px; }
-      #cam { max-height: 80vh; }    /* bigger cap on desktop */
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>Teleop Turtle (Car-like)</title>
+<style>
+  :root { --joy-size: 140px; --knob: 70px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 12px; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0b0c10; color: #e5e7eb; overflow-y: auto; overscroll-behavior: contain;
+  }
+  h2 { margin: 4px 0 8px; }
+  #status { display: inline-block; padding: 4px 10px; border-radius: 10px; background: #1f2937; }
+  #cam {
+    display: block; width: 100%; height: auto; max-height: 75svh; object-fit: contain;
+    margin: 10px auto; background:#000; border: 1px solid #374151; border-radius: 10px;
+  }
+  .stop {
+    position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0));
+    padding: 14px 18px; border-radius: 12px; border: 1px solid #ef4444; color:#fff;
+    background: #dc2626; font-weight: 700; z-index: 20;
+  }
+  /* Dual joysticks */
+  .joy {
+    position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0));
+    width: var(--joy-size); height: var(--joy-size); border-radius: 50%;
+    background: rgba(31,41,55,0.6); border: 1px solid #374151; backdrop-filter: blur(4px);
+    touch-action: none; z-index: 10;
+  }
+  .joy.left  { left: 16px;  }
+  .joy.right { right: 16px; }
+  .knob {
+    position: absolute; left: 50%; top: 50%; width: var(--knob); height: var(--knob);
+    margin-left: calc(var(--knob)/-2); margin-top: calc(var(--knob)/-2);
+    border-radius: 50%; background: rgba(99,102,241,0.9); border: 2px solid rgba(255,255,255,0.15);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.35); touch-action: none;
+  }
+  @media (min-width: 900px) { :root { --joy-size: 160px; --knob: 80px; } #cam { max-height: 80vh; } }
+</style>
 </head>
 <body>
   <h2>Teleop Turtle</h2>
-  <div class="hud">
-    <span id="status">Connecting…</span>
-  </div>
+  <span id="status">Connecting…</span>
 
   <!-- Live camera (MJPEG) -->
   <img id="cam" alt="camera" />
 
-  <!-- On-screen joystick -->
-  <div class="joystick" id="joy">
-    <div class="knob" id="knob"></div>
-  </div>
+  <!-- Left = STEER (angular.z), Right = THROTTLE/BRAKE (linear.x) -->
+  <div class="joy left"  id="joySteer"><div class="knob"></div></div>
+  <div class="joy right" id="joyThrottle"><div class="knob"></div></div>
   <button class="stop" id="stopBtn" aria-label="Emergency stop">STOP</button>
 
 <script>
 (() => {
-  const HOST = location.hostname || "JETSON_IP_HERE"; // e.g. "192.168.1.50"
+  const HOST = location.hostname || "JETSON_IP_HERE"; // set if opening file:// on phone
+  // Stream (pick a size that matches your camera aspect to reduce buffering)
+  document.getElementById('cam').src =
+    "http://" + HOST + ":8080/stream?topic=/image_raw&type=mjpeg&width=480&height=270&quality=80";
 
-  // --- Camera stream ---
-  const cam = document.getElementById('cam');
-  // Pick a resolution/aspect that matches your camera to reduce buffering.
-  cam.src = "http://" + HOST + ":8080/stream?topic=/image_raw&type=mjpeg&width=480&height=270&quality=80";
-
-  // --- Teleop WebSocket ---
+  // WebSocket control
   const ws = new WebSocket("ws://" + HOST + ":8765");
   const statusEl = document.getElementById('status');
+  ws.onopen  = () => { ws.send(JSON.stringify({ role: "browser" })); statusEl.textContent = "Connected"; };
+  ws.onclose = () => { statusEl.textContent = "Disconnected"; };
+  ws.onerror = () => { statusEl.textContent = "Error (see server logs)"; };
 
-  ws.onopen = () => { ws.send(JSON.stringify({ role: "browser" })); statusEl.textContent = "Connected"; };
-  ws.onclose = () => statusEl.textContent = "Disconnected";
-  ws.onerror  = () => statusEl.textContent = "Error (see server logs)";
+  // Desired max speeds (turtlesim friendly; tune later for real robot)
+  const MAX_X = 2.0;   // linear  (m/s)
+  const MAX_Z = 2.0;   // angular (rad/s)
 
-  let lastX = 0, lastZ = 0;
+  // If you want reverse on throttle stick, set to true
+  const ALLOW_REVERSE = false;
+
+  let linX = 0, angZ = 0, lastX = 0, lastZ = 0;
+
   function send(x, z) {
     if (ws.readyState !== WebSocket.OPEN) return;
-    if (Math.abs(x - lastX) < 1e-3 && Math.abs(z - lastZ) < 1e-3) return;
+    if (Math.abs(x-lastX)<1e-3 && Math.abs(z-lastZ)<1e-3) return;
     ws.send(JSON.stringify({ type: "control", x, z }));
     lastX = x; lastZ = z;
   }
 
-  // --- Keyboard (desktop) ---
+  // Keyboard fallback (WASD/Arrows)
   document.addEventListener("keydown", e => {
-    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","w","a","s","d","W","A","S","D"].includes(e.key)) e.preventDefault();
-    let x = 0, z = 0;
-    if (e.key === "ArrowUp" || e.key==="w" || e.key==="W") x = 2.0;
-    if (e.key === "ArrowDown"|| e.key==="s" || e.key==="S") x = -2.0;
-    if (e.key === "ArrowLeft" || e.key==="a" || e.key==="A") z = 2.0;
-    if (e.key === "ArrowRight"|| e.key==="d" || e.key==="D") z = -2.0;
-    if (x !== 0 || z !== 0) send(x, z);
+    if (!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","w","a","s","d","W","A","S","D"].includes(e.key)) return;
+    e.preventDefault();
+    if (["ArrowLeft","a","A"].includes(e.key))  angZ =  MAX_Z;
+    if (["ArrowRight","d","D"].includes(e.key)) angZ = -MAX_Z;
+    if (["ArrowUp","w","W"].includes(e.key))    linX =  MAX_X;
+    if (["ArrowDown","s","S"].includes(e.key))  linX = (ALLOW_REVERSE ? -MAX_X : 0);
+    send(linX, angZ);
   });
   document.addEventListener("keyup", e => {
-    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","w","a","s","d","W","A","S","D"].includes(e.key)) send(0,0);
+    if (!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","w","a","s","d","W","A","S","D"].includes(e.key)) return;
+    e.preventDefault();
+    if (["ArrowLeft","a","A","ArrowRight","d","D"].includes(e.key)) angZ = 0;
+    if (["ArrowUp","w","W","ArrowDown","s","S"].includes(e.key))    linX = 0;
+    send(linX, angZ);
   });
 
-  // --- Touch joystick (mobile) ---
-  const joy  = document.getElementById('joy');
-  const knob = document.getElementById('knob');
+  // Generic joystick binder (returns normalized [-1,1] x/y to a callback)
+  function attachJoystick(rootEl, onChange) {
+    const knob = rootEl.querySelector('.knob');
+    let active = false, center = {x:0,y:0}, rBase=0, rKnob=0, loop=null, latest={x:0,y:0};
 
-  let joyActive = false;
-  let joyCenter = { x: 0, y: 0 };
-  const baseR = () => joy.clientWidth / 2;
-  const knobR = () => knob.clientWidth / 2;
+    function setKnob(dx, dy){ knob.style.transform = `translate(${dx}px, ${dy}px)`; }
 
-  function setKnob(dx, dy) { knob.style.transform = `translate(${dx}px, ${dy}px)`; }
-
-  function touchPoint(e) {
-    const t = (e.touches && e.touches[0]) || e;
-    const rect = joy.getBoundingClientRect();
-    const cx = rect.left + rect.width/2;
-    const cy = rect.top + rect.height/2;
-    return { x: t.clientX, y: t.clientY, cx, cy };
+    function start(e){
+      e.preventDefault(); active = true;
+      const rect = rootEl.getBoundingClientRect();
+      center = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+      rBase = rect.width/2; rKnob = knob.clientWidth/2;
+      if (!loop) loop = setInterval(() => onChange(latest.x, latest.y), 50); // 20 Hz
+    }
+    function move(e){
+      if (!active) return; e.preventDefault();
+      const t = (e.touches && e.touches[0]) || e;
+      let dx = t.clientX - center.x, dy = t.clientY - center.y;
+      const r = rBase - rKnob/2;
+      const mag = Math.hypot(dx,dy), cl = mag>r ? r/mag : 1;
+      dx *= cl; dy *= cl; setKnob(dx,dy);
+      latest = { x: dx/r, y: dy/r }; // normalized [-1,1]
+    }
+    function end(e){
+      e && e.preventDefault(); active = false; latest = {x:0,y:0}; setKnob(0,0);
+      onChange(0,0); if (loop){ clearInterval(loop); loop=null; }
+    }
+    rootEl.addEventListener('touchstart', start, {passive:false});
+    rootEl.addEventListener('touchmove',  move,  {passive:false});
+    rootEl.addEventListener('touchend',   end,   {passive:false});
+    rootEl.addEventListener('touchcancel',end,   {passive:false});
+    rootEl.addEventListener('mousedown',  start);
+    window .addEventListener('mousemove', move);
+    window .addEventListener('mouseup',   end);
   }
+// Left joystick: STEER (use nx, ignore ny)
+attachJoystick(document.getElementById('joySteer'), (nx, _ny) => {
+  angZ = MAX_Z * (-nx);   // left (nx<0) → +z
+  send(linX, angZ);
+});
 
-  const MAX_X = 2.0, MAX_Z = 2.0;   // turtlesim-friendly
-
-  let pendingVec = {x:0, z:0};
-  let sendLoop = null;
-  function startSendLoop(){ if (!sendLoop) sendLoop = setInterval(() => send(pendingVec.x, pendingVec.z), 50); } // 20 Hz
-  function stopSendLoop(){ if (sendLoop) { clearInterval(sendLoop); sendLoop = null; } }
-
-  function onStart(e){ e.preventDefault(); joyActive = true; const p = touchPoint(e); joyCenter = { x: p.cx, y: p.cy }; startSendLoop(); }
-  function onMove(e){
-    if (!joyActive) return; e.preventDefault();
-    const p = touchPoint(e);
-    const dx = p.x - joyCenter.x;      // right is +
-    const dy = p.y - joyCenter.y;      // down is +
-
-    const r = baseR() - knobR()/2;
-    const mag = Math.hypot(dx, dy);
-    const cl = mag > r ? r / mag : 1.0;
-    const cdx = dx * cl, cdy = dy * cl;
-
-    setKnob(cdx, cdy);
-
-    // Normalize & map: up->+x, left->+z
-    const nx = cdx / r, ny = cdy / r;
-    pendingVec = { x: MAX_X * (-ny), z: MAX_Z * (-nx) };
+// Right joystick: THROTTLE/BRAKE (ignore nx, use ny)
+attachJoystick(document.getElementById('joyThrottle'), (_nx, ny) => {
+  const up = -ny;  // up on the stick = negative ny
+  if (ALLOW_REVERSE) {
+    linX = MAX_X * up;             // up→+, down→-
+  } else {
+    linX = MAX_X * Math.max(0, up); // down = brake to 0 (no reverse)
   }
-  function onEnd(e){ e.preventDefault(); joyActive = false; pendingVec = {x:0, z:0}; setKnob(0,0); send(0,0); stopSendLoop(); }
-
-  // Touch + mouse
-  joy.addEventListener('touchstart', onStart, {passive:false});
-  joy.addEventListener('touchmove',  onMove,  {passive:false});
-  joy.addEventListener('touchend',   onEnd,   {passive:false});
-  joy.addEventListener('touchcancel',onEnd,   {passive:false});
-  joy.addEventListener('mousedown', onStart);
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onEnd);
+  send(linX, angZ);
+});
 
   // Big STOP
-  document.getElementById('stopBtn').addEventListener('click', () => { pendingVec = {x:0, z:0}; setKnob(0,0); send(0,0); });
-
-  // Recompute on rotate (some mobile browsers update svh late)
-  window.addEventListener('orientationchange', () => { setTimeout(() => { /* layout recalcs happen via CSS */ }, 150); });
+  document.getElementById('stopBtn').addEventListener('click', () => {
+    linX = 0; angZ = 0; send(0,0);
+  });
 })();
 </script>
 </body>
