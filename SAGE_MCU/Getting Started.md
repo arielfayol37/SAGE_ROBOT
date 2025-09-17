@@ -18,6 +18,8 @@
 
 ```
 git clone git@github.com:arielfayol37/SAGE_ROBOT.git
+cd SAGE_ROBOT/
+git switch MCU
 ```
 
 - Type "yes" to connect and enter your password
