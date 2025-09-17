@@ -1,0 +1,37 @@
+!SESSION 2025-09-17 11:43:52.207 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_US
+Command-line arguments:  -os win32 -ws win32 -arch x86_64 -data C:\Users\RangersLaptop\Nextcloud2\Tour_guide\SAGE_ROBOT
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2025-09-17 11:43:56.898
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2025-09-17 11:43:56.898
+!MESSAGE Log4j2 initialized with config file C:\Users\RangersLaptop\Nextcloud2\Tour_guide\SAGE_ROBOT\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-09-17 11:43:59.285
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.cdt.core 1 0 2025-09-17 11:44:13.170
+!MESSAGE Indexed 'SAGE_MCU' (21 sources, 113 headers) in 2.45 sec: 10,011 declarations; 40,349 references; 3 unresolved inclusions; 46 syntax errors; 171 unresolved names (0.34%)
+!SESSION 2025-09-17 11:49:50.524 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_US
+Framework arguments:  C:\Users\RangersLaptop\Nextcloud2\Tour_guide\SAGE_ROBOT\SAGE_MCU\.project
+Command-line arguments:  -os win32 -ws win32 -arch x86_64 C:\Users\RangersLaptop\Nextcloud2\Tour_guide\SAGE_ROBOT\SAGE_MCU\.project
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2025-09-17 11:49:54.298
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2025-09-17 11:49:54.298
+!MESSAGE Log4j2 initialized with config file C:\Users\RangersLaptop\Nextcloud2\Tour_guide\SAGE_ROBOT\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-09-17 11:49:58.029
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.cdt.core 1 0 2025-09-17 11:50:01.005
+!MESSAGE Indexed 'SAGE_MCU' (21 sources, 113 headers) in 2.87 sec: 10,011 declarations; 40,349 references; 3 unresolved inclusions; 46 syntax errors; 171 unresolved names (0.34%)
