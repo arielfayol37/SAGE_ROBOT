@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'my_node = web_teleop_bridge.my_node:main',
-            'control_bridge = web_teleop_bridge.control_bridge:main'
+            'control_bridge = web_teleop_bridge.control_bridge:main',
+            'serial_bridge = web_teleop_bridge.serial_bridge:main',
         ],
     },
 )
