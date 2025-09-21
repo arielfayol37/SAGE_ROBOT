@@ -244,7 +244,8 @@ def get_robot_status():
                 return {"robot_id": robot_id, "data": data["robot_states"][robot_id]}
         return None
     except Exception:
-        log_exc("get_robot_status")
+        pass
+        # log_exc("get_robot_status")
         return None
 
 def update_robot_route(destinations, clear_existing=False):
@@ -733,7 +734,7 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     log(f"Using device: {device}")
     # ---- STT init ----
-    USE_WAKEWORD = True
+    USE_WAKEWORD = False
 
     recorder_kwargs = dict(
         language="en",
