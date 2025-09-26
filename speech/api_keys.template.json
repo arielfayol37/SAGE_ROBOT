@@ -1,9 +1,4 @@
 {
-  "OPENAI_API_KEY": "", 
-  "ANTHROPIC_API_KEY": "",
-  "XAI_API_KEY": ""
-}
-{
   "openai_api_key": "REPLACE_WITH_YOUR_OPENAI_KEY",
   "anthropic_api_key": "REPLACE_WITH_YOUR_ANTHROPIC_KEY",
   "xai_api_key": "REPLACE_WITH_YOUR_XAI_KEY"

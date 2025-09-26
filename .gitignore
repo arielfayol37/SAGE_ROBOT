@@ -2,6 +2,7 @@
 __pycache__/
 speech/api_keys.json
 models/
+*api_keys.json
 # ROS2 build, install, and log directories (not needed if already ignored by default)
 # Standard ROS2 ignore patterns
 build/
