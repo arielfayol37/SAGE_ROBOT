@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-<title>Teleop Turtle (Car-like)</title>
+<title>Teleop SAGE</title>
 <style>
   :root { --joy-size: 140px; --knob: 70px; }
   * { box-sizing: border-box; }
@@ -41,7 +41,7 @@
 </style>
 </head>
 <body>
-  <h2>Teleop Turtle</h2>
+  <h2>SAGE</h2>
   <span id="status">Connecting…</span>
 
   <!-- Live camera (MJPEG) -->
@@ -50,7 +50,7 @@
   <!-- Left = STEER (angular.z), Right = THROTTLE/BRAKE (linear.x) -->
   <div class="joy left"  id="joySteer"><div class="knob"></div></div>
   <div class="joy right" id="joyThrottle"><div class="knob"></div></div>
-  <button class="stop" id="stopBtn" aria-label="Emergency stop">STOP</button>
+  <!--<button class="stop" id="stopBtn" aria-label="Emergency stop">STOP</button>-->
 
 <script>
 (() => {
@@ -67,11 +67,10 @@
   ws.onerror = () => { statusEl.textContent = "Error (see server logs)"; };
 
   // Desired max speeds (turtlesim friendly; tune later for real robot)
-  const MAX_X = 2.0;   // linear  (m/s)
-  const MAX_Z = 2.0;   // angular (rad/s)
+  const MAX_X = 1.0;   // linear  (m/s)
+  const MAX_Z = 1.0;   // angular (rad/s)
 
-  // If you want reverse on throttle stick, set to true
-  const ALLOW_REVERSE = false;
+  const ALLOW_REVERSE = true;
 
   let linX = 0, angZ = 0, lastX = 0, lastZ = 0;
 
