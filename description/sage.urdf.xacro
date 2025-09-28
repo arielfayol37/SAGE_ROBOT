@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="sage">
   <!-- === Dimensions === -->
-  <xacro:property name="base_length" value="0.50"/>
-  <xacro:property name="base_width" value="0.50"/>
+  <xacro:property name="base_width" value="0.3691"/>
+  <xacro:property name="base_length" value="0.4083"/>
   <xacro:property name="base_thickness" value="0.02"/>
 
-  <xacro:property name="wheel_radius" value="0.06"/>
-  <xacro:property name="wheel_thickness" value="0.035"/>
-  <xacro:property name="wheel_x_from_back" value="0.10"/>
-  <xacro:property name="lidar_height" value="0.20"/>
+  <xacro:property name="wheel_radius" value="0.0505"/>
+  <xacro:property name="wheel_thickness" value="0.0254"/>
+  <xacro:property name="wheel_x_from_back" value="0.0658"/>
+  <xacro:property name="lidar_height" value="0.2124"/>
 
   <xacro:property name="base_z" value="${wheel_radius}"/>
   <xacro:property name="half_len" value="${base_length/2.0}"/>
@@ -123,7 +123,7 @@
   <joint name="lidar_mount" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <origin xyz="0 0 ${lidar_height}" rpy="0 0 0"/>
+    <origin xyz="0 0 ${lidar_height}" rpy="0 0 ${pi}"/> <!-- LIDAR mounted 180 degrees rotated I think -->
   </joint>
 
   <!-- === Nav2 footprint (optional) === -->

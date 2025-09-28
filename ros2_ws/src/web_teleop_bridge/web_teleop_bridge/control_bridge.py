@@ -7,7 +7,7 @@ import websockets, asyncio, json
 class ControlBridge(Node):
     def __init__(self):
         super().__init__("control_bridge")
-        self.pub = self.create_publisher(Twist, "/turtle1/cmd_vel", 10)
+        self.pub = self.create_publisher(Twist, "/cmd_vel", 10)
 
     async def ws_loop(self):
         uri = "ws://localhost:8765"
