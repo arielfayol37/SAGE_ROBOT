@@ -6,14 +6,16 @@
   <xacro:property name="base_thickness" value="0.02"/>
 
   <xacro:property name="wheel_radius" value="0.0505"/>
+  <xacro:property name="front_wheel_radius" value="0.0415"/>
   <xacro:property name="wheel_thickness" value="0.0254"/>
   <xacro:property name="wheel_x_from_back" value="0.0658"/>
+  <xacro:property name="front_wheel_x_from_front" value="0.04572"/>
   <xacro:property name="lidar_height" value="0.2124"/>
 
-  <xacro:property name="base_z" value="${wheel_radius}"/>
+  <xacro:property name="base_z" value="0.08731"/>
   <xacro:property name="half_len" value="${base_length/2.0}"/>
   <xacro:property name="half_wid" value="${base_width/2.0}"/>
-  <xacro:property name="track_width" value="${base_width + wheel_thickness}"/>
+  <xacro:property name="track_width" value="0.4953"/>
   <xacro:property name="half_track" value="${track_width / 2.0}"/>
   <xacro:property name="rear_wheel_x" value="${-half_len + wheel_x_from_back}"/>
 
@@ -83,14 +85,14 @@
       <visual>
         <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
         <geometry>
-          <cylinder radius="${wheel_radius * 0.5}" length="${wheel_thickness}"/>
+          <cylinder radius="${front_wheel_radius}" length="${wheel_thickness}"/>
         </geometry>
         <material name="black"/>
       </visual>
       <collision>
         <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
         <geometry>
-          <cylinder radius="${wheel_radius * 0.5}" length="${wheel_thickness}"/>
+          <cylinder radius="${front_wheel_radius}" length="${wheel_thickness}"/>
         </geometry>
       </collision>
       <inertial>
@@ -102,7 +104,7 @@
     <joint name="${name}_joint" type="fixed">
       <parent link="base_link"/>
       <child link="${name}"/>
-      <origin xyz="${half_len - 0.08} ${y} ${wheel_radius}" rpy="0 0 0"/>
+      <origin xyz="${half_len - front_wheel_x_from_front} ${y} ${wheel_radius}" rpy="0 0 0"/>
     </joint>
   </xacro:macro>
 
