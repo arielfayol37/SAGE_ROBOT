@@ -75,7 +75,7 @@ ros2 launch sllidar_ros2 sllidar_a1_launch.py frame_id:=lidar_link
 ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$(xacro ~/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)"
 ros2 launch slam_toolbox online_async_launch.py
 ros2 launch nav2_bringup navigation_launch.py \
-  params_file:=~/Desktop/SAGE_ROBOT/config/nav2_params.yaml \
+  params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml \
   use_sim_time:=false
 ```
 
