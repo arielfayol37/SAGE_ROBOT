@@ -41,8 +41,8 @@
 #define MOTOR2_DIR_PIN  GPIO_PIN_8
 #define MOTOR2_PWM_CCR  TIM2->CCR4
 
-#define Lw  0.35f // Distance between wheels (m)
-#define WHEEL_DIAMETER  0.1f // Wheel size (m)
+#define Lw  0.465f // Distance between wheels (m)
+#define WHEEL_DIAMETER  0.101f // Wheel size (m)
 #define GEAR_RATIO  7.3333f // Ratio from the motor to the wheel
 #define Max_RPM  3000.0f // motor speed at 100% speed (guess from aliexpress listing, this needs to be calculated)
 

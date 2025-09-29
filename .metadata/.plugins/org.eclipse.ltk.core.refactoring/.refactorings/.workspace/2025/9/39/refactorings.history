@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;SAGE_MCU&apos;" deleteContents="false" description="Delete resource &apos;SAGE_MCU&apos;" element1="/SAGE_MCU" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1758921820095"/>
+</session>
