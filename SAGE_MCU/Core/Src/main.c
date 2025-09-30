@@ -41,8 +41,8 @@
 #define MOTOR2_DIR_PIN  GPIO_PIN_8
 #define MOTOR2_PWM_CCR  TIM2->CCR4
 
-#define Lw  0.465f // Distance between wheels (m)
-#define WHEEL_DIAMETER  0.101f // Wheel size (m)
+#define Lw  0.35f // Distance between wheels (m)
+#define WHEEL_DIAMETER  0.1f // Wheel size (m)
 #define GEAR_RATIO  7.3333f // Ratio from the motor to the wheel
 #define Max_RPM  3000.0f // motor speed at 100% speed (guess from aliexpress listing, this needs to be calculated)
 
@@ -67,12 +67,29 @@
 #define DIR_FWD_STATE      GPIO_PIN_SET
 #define DIR_REV_STATE      GPIO_PIN_RESET
 
-#define MPU9250_ADDR 	 (0x68 << 1)  // left-shifted for HAL
+//#define MPU9250_ADDR 	 0x68  // left-shifted for HAL
+#define MPU9250_ADDR_7BIT  0x68
+#define MPU9250_ADDR       (MPU9250_ADDR_7BIT << 1)  // HAL expects 8-bit
+
 #define MPU9250_REG_DATA 0x3B
 #define PWR_MGMT_1 		 0x6B
 #define WHO_AM_I   		 0x75
 
 #define MAX_ACCEL_MPS2   8.0f   // example: 0.5 m/s^2
+
+// --- Serial framing ---
+#define SOF            0x7E
+
+#define TYPE_CMD       0x01  // Host -> MCU: v,w
+#define TYPE_ODOM      0x02  // MCU -> Host: x,y,th,v,w
+#define TYPE_IMU       0x03  // MCU -> Host: gx,gy,gz, ax,ay,az
+
+// Payload sizes (bytes)
+#define LEN_CMD        (sizeof(float)*2)   // 8
+#define LEN_ODOM       (sizeof(float)*5)   // 20
+#define LEN_IMU        (sizeof(float)*6)   // 24
+
+#define MPU9250_ACCEL_XOUT_H 0x3B
 
 
 
@@ -116,10 +133,21 @@ float robot_Theta = 0.0f; // rad
 static float i_term_L = 0.0f;
 static float i_term_R = 0.0f;
 
+// ----- RX state -----
+static uint8_t  rx_state = 0;      // 0: wait SOF, 1: TYPE, 2: LEN, 3: PAYLOAD
+static uint8_t  rx_type = 0;
+static uint8_t  rx_len  = 0;
+static uint8_t  rx_pay[32];        // enough for our largest payload
+static uint8_t  rx_pay_idx = 0;
 
+// kick off single-byte interrupt read at init: HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+static uint8_t rx_byte;
 
+// ±2 g, ±250 dps on MPU‑9250
+static const float ACCEL_SENSE = 16384.0f;   // LSB/g
+static const float GYRO_SENSE  = 131.0f;     // LSB/(deg/s)
 
-uint8_t rxPacket[9];  // 1 header + 8 bytes for two floats
+// uint8_t rxPacket[9];  // 1 header + 8 bytes for two floats
 
 float v = 0.0f; // velocity m/s
 float w = 0.0f; // angular velocity rad/s
@@ -128,9 +156,11 @@ uint8_t IM_buf[14]; // IMU data buffer
 
 
 typedef struct { // IMU data structure
-	float ax, ay, az;    // g
-	float gx, gy, gz;    // deg/s
+	float ax, ay, az;    // m/s^2
+	float gx, gy, gz;    // rad/s
 } IMU_Data_t;
+
+
 
 /* USER CODE END PV */
 
@@ -145,6 +175,7 @@ static void MX_TIM4_Init(void);
 static void MX_I2C3_Init(void);
 /* USER CODE BEGIN PFP */
 void Set_Motor_Speed(uint8_t motor, float duty_percent);
+IMU_Data_t Read_IMU(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -203,41 +234,49 @@ static void IMU_Init(void)
 	// Wake up the device (clear sleep bit)
 	data = 0x00;
 	HAL_I2C_Mem_Write(&hi2c3, MPU9250_ADDR, PWR_MGMT_1, 1, &data, 1, 100);
+
 }
+
 
 IMU_Data_t Read_IMU(void)
 {
-	IMU_Data_t d;
-	uint8_t buf[14];
+    IMU_Data_t d;
+    uint8_t buf[14];
 
-	if (HAL_I2C_Mem_Read(&hi2c3, MPU9250_ADDR, 0x3B, I2C_MEMADD_SIZE_8BIT, buf, sizeof(buf), 100) != HAL_OK)
-	{
-		// handle error, maybe zero d
-		d.ax = 0.0f;
-		d.ay = 0.0f;
-		d.az = 0.0f;
-		d.gx = 0.0f;
-		d.gy = 0.0f;
-		d.gz = 0.0f;
-		return d;
-	}
+    if (HAL_I2C_Mem_Read(&hi2c3, MPU9250_ADDR, MPU9250_ACCEL_XOUT_H,
+                         I2C_MEMADD_SIZE_8BIT, buf, sizeof(buf), 100) != HAL_OK)
+    {
+        // If read failed, zero values
+        d.ax = d.ay = d.az = 0.0f;
+        d.gx = d.gy = d.gz = 0.0f;
+        return d;
+    }
 
-	int16_t ax = (buf[0] << 8) | buf[1];
-	int16_t ay = (buf[2] << 8) | buf[3];
-	int16_t az = (buf[4] << 8) | buf[5];
-	int16_t gx = (buf[8] << 8) | buf[9];
-	int16_t gy = (buf[10] << 8) | buf[11];
-	int16_t gz = (buf[12] << 8) | buf[13];
+    // Convert raw values
+    int16_t raw_ax = (buf[0] << 8) | buf[1];
+    int16_t raw_ay = (buf[2] << 8) | buf[3];
+    int16_t raw_az = (buf[4] << 8) | buf[5];
+    int16_t raw_gx = (buf[8] << 8) | buf[9];
+    int16_t raw_gy = (buf[10] << 8) | buf[11];
+    int16_t raw_gz = (buf[12] << 8) | buf[13];
 
-	d.ax = ax / 16384.0f;
-	d.ay = ay / 16384.0f;
-	d.az = az / 16384.0f;
-	d.gx = gx / 131.0f;
-	d.gy = gy / 131.0f;
-	d.gz = gz / 131.0f;
+    // Accel → m/s^2
+    d.ax = (raw_ax / ACCEL_SENSE) * 9.80665f;
+    d.ay = (raw_ay / ACCEL_SENSE) * 9.80665f;
+    d.az = (raw_az / ACCEL_SENSE) * 9.80665f - 10.75f; // weird ass persistent bias removal
 
-	return d;
+    // Gyro → rad/s
+    float gx_dps = raw_gx / GYRO_SENSE;
+    float gy_dps = raw_gy / GYRO_SENSE;
+    float gz_dps = raw_gz / GYRO_SENSE;
+
+    d.gx = gx_dps * (float)M_PI / 180.0f - 0.04f;
+    d.gy = gy_dps * (float)M_PI / 180.0f;
+    d.gz = gz_dps * (float)M_PI / 180.0f;
+
+    return d;
 }
+
 
 
 // Returns counts since last call; handles 16-bit wrap. Bind this to your actual encoder timers.
@@ -343,9 +382,6 @@ void Control_Update(void)
 	float w_robot = (vR_meas - vL_meas) / Lw; // rad/s
 
 	// Integrate to update position and orientation
-
-    //IMU_Data_t imu = Read_IMU();
-
 	robot_Theta += w_robot * CTRL_DT;
 	robot_Theta = fmodf(robot_Theta, 2.0f * (float)M_PI); // keep theta in [0, 2pi)
 
@@ -379,35 +415,97 @@ void Control_Update(void)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	if (huart->Instance == USART2)
-	{
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-		if (rxPacket[0] == 120)   // header byte (e.g. 'x')
-		{
-			//Control_Packet(rxPacket[1]); // process control byte if needed
-			memcpy(&v, &rxPacket[1], sizeof(float)); // copy 4 bytes starting at rxPacket[1] into v
-			memcpy(&w, &rxPacket[1 + sizeof(float)], sizeof(float)); // copy next 4 bytes into w
+    if (huart->Instance == USART2)
+    {
+        uint8_t b = rx_byte;
 
-			Robot_Set_Velocity(v, w);
+        switch (rx_state)
+        {
+            case 0: // wait SOF
+                if (b == SOF) { rx_state = 1; }
+                break;
 
-		}
-		// restart interrupt reception
-		HAL_UART_Receive_IT(&huart2, rxPacket, sizeof(rxPacket));
-	}
+            case 1: // TYPE
+                rx_type = b;
+                rx_state = 2;
+                break;
+
+            case 2: // LEN
+                rx_len = b;
+                if (rx_len > sizeof(rx_pay)) {
+                    // invalid length -> reset
+                    rx_state = 0;
+                } else {
+                    rx_pay_idx = 0;
+                    rx_state = (rx_len == 0) ? 0 : 3;
+                }
+                break;
+
+            case 3: // PAYLOAD
+                rx_pay[rx_pay_idx++] = b;
+                if (rx_pay_idx >= rx_len) {
+                    // full frame received -> dispatch
+                    if (rx_type == TYPE_CMD && rx_len == LEN_CMD) {
+                        float v_in, w_in;
+                        memcpy(&v_in, &rx_pay[0], 4);
+                        memcpy(&w_in, &rx_pay[4], 4);
+                        // (optional) limit here if you want:
+                        // v_in = clampf(v_in, -V_MAX, V_MAX);
+                        // w_in = clampf(w_in, -W_MAX, W_MAX);
+                        Robot_Set_Velocity(v_in, w_in);
+                    }
+                    // else: ignore unknown type/len
+
+                    // reset for next frame
+                    rx_state = 0;
+                }
+                break;
+        }
+
+        // re-arm 1-byte RX
+        HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+    }
 }
 
-void TX_Packet(void)
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance == USART2) {
+    rx_state = 0;
+    HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+  }
+}
+
+static void TX_Odom(void)
 {
-	// Pack into a buffer
-	uint8_t buf[21];
-	buf[0] = 121; // header byte)
-	memcpy(&buf[1], &robot_X, sizeof(robot_X)); // 4 bytes for float
-	memcpy(&buf[5], &robot_Y, sizeof(robot_Y)); // 4 bytes for float
-	memcpy(&buf[9], &robot_Theta, sizeof(robot_Theta)); // 4 bytes for float
-	memcpy(&buf[13], &v, sizeof(v)); // 4 bytes for float
-	memcpy(&buf[17], &w, sizeof(w)); // 4 bytes for float
-	// Transmit all 21 bytes
-	HAL_UART_Transmit(&huart2, buf, sizeof(buf), HAL_MAX_DELAY);
+    uint8_t buf[3 + LEN_ODOM]; // SOF, TYPE, LEN + payload
+    buf[0] = SOF;
+    //buf[1] = TYPE_ODOM;
+    //buf[2] = LEN_ODOM;
+
+    // payload: x, y, theta, v, w (float32 LE)
+    memcpy(&buf[3],      &robot_X,   4);
+    memcpy(&buf[3 + 4],  &robot_Y,   4);
+    memcpy(&buf[3 + 8],  &robot_Theta, 4);
+    memcpy(&buf[3 + 12], &v, 4);
+    memcpy(&buf[3 + 16], &w, 4);
+
+    HAL_UART_Transmit(&huart2, buf, sizeof(buf), HAL_MAX_DELAY);
+}
+
+static void TX_Imu(const IMU_Data_t* d)
+{
+    uint8_t buf[3 + LEN_IMU];
+    buf[0] = SOF;
+    //buf[1] = TYPE_IMU;
+    //buf[2] = LEN_IMU;
+
+    memcpy(&buf[1],      &d->gx, 4);
+    memcpy(&buf[1 + 4],  &d->gy, 4);
+    memcpy(&buf[1 + 8],  &d->gz, 4);
+    memcpy(&buf[1 + 12], &d->ax, 4);
+    memcpy(&buf[1 + 16], &d->ay, 4);
+    memcpy(&buf[1 + 20], &d->az, 4);
+
+    HAL_UART_Transmit(&huart2, buf, sizeof(buf), HAL_MAX_DELAY);
 }
 
 void Control_Packet(uint8_t Control_Byte)
@@ -462,12 +560,17 @@ int main(void)
 	Motors_Init(); // Start these motors dih
 	IMU_Init(); // ts pmo sybau
 
-	const uint32_t tick_period = 1000U / CTRL_HZ; // 10 ms period
-	const uint32_t tx_period = 1000U / 50; // 20 ms period for 50 Hz
-	uint32_t next_tick = HAL_GetTick();          // start time
-	uint32_t next_tx_tick = HAL_GetTick();
 
-	HAL_UART_Receive_IT(&huart2, rxPacket, 9); // start reciever
+
+	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
+	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
+	const uint32_t imu_period    = 1000U / 33;     // 10 ms  -> 100 Hz
+
+	uint32_t next_tick     = HAL_GetTick();
+	uint32_t next_odom_tx  = HAL_GetTick();
+	uint32_t next_imu_tx   = HAL_GetTick();
+
+	HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // start reciever
 
 
   /* USER CODE END 2 */
@@ -482,20 +585,23 @@ int main(void)
 
 		uint32_t now = HAL_GetTick();
 
-		// Control_Update at 100 Hz
-		while ((int32_t)(now - next_tick) >= 0)
-		{
-			Control_Update();            // Your control function
-			next_tick += tick_period;    // schedule next call
-
-
+		// 100 Hz control
+		while ((int32_t)(now - next_tick) >= 0) {
+			Control_Update();
+			next_tick += tick_period;
 		}
 
-		// TX_Packet at 50 Hz
-		if ((int32_t)(now - next_tx_tick) >= 0)
-		{
-			TX_Packet();
-			next_tx_tick += tx_period;
+		// 50 Hz odom TX
+		if ((int32_t)(now - next_odom_tx) >= 0) {
+			//TX_Odom();
+			next_odom_tx += odom_period;
+		}
+
+		// 100–200 Hz IMU TX
+		if ((int32_t)(now - next_imu_tx) >= 0) {
+			IMU_Data_t d = Read_IMU();        // consider bias removal here
+			TX_Imu(&d);
+			next_imu_tx += imu_period;
 		}
 
 	}

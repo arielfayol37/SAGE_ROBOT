@@ -424,3 +424,25 @@ Project's 'SAGE_MCU' active one is 'SAGE_MCU.ioc' file
 !MESSAGE OK
 !SUBENTRY 1 org.eclipse.core.resources 4 77 2025-09-29 13:26:46.959
 !MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'
+!SESSION 2025-09-30 10:39:18.558 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_US
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2025-09-30 10:39:28.459
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2025-09-30 10:39:28.461
+!MESSAGE Log4j2 initialized with config file C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-09-30 10:39:38.845
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.core.resources 4 77 2025-09-30 10:49:47.763
+!MESSAGE Invalid project description.
+!SUBENTRY 1 unknown 0 0 2025-09-30 10:49:47.763
+!MESSAGE OK
+!SUBENTRY 1 org.eclipse.core.resources 4 77 2025-09-30 10:49:47.763
+!MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'

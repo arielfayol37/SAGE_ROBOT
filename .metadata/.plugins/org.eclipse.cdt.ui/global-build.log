@@ -1,62 +1,157 @@
-13:28:45 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+11:36:28 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:477:13: warning: 'TX_Odom' defined but not used [-Wunused-function]
+  477 | static void TX_Odom(void)
+      |             ^~~~~~~
 arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 Finished building target: SAGE_MCU.elf
  
 arm-none-eabi-size  SAGE_MCU.elf 
 arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
    text	   data	    bss	    dec	    hex	filename
-  61340	    468	   2508	  64316	   fb3c	SAGE_MCU.elf
+  61368	    468	   2540	  64376	   fb78	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 Finished building: SAGE_MCU.list
  
-13:28:52 **** Incremental Build of configuration Debug for project SAGE_MCU ****
-make -j12 all 
-arm-none-eabi-size  SAGE_MCU.elf 
-   text	   data	    bss	    dec	    hex	filename
-  61340	    468	   2508	  64316	   fb3c	SAGE_MCU.elf
-Finished building: default.size.stdout
- 
-13:30:53 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+11:38:25 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:602:36: warning: unused variable 'd' [-Wunused-variable]
+  602 |                         IMU_Data_t d = Read_IMU();        // consider bias removal here
+      |                                    ^
+../Core/Src/main.c: At top level:
+../Core/Src/main.c:494:13: warning: 'TX_Imu' defined but not used [-Wunused-function]
+  494 | static void TX_Imu(const IMU_Data_t* d)
+      |             ^~~~~~
 arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 Finished building target: SAGE_MCU.elf
  
 arm-none-eabi-size  SAGE_MCU.elf 
 arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
    text	   data	    bss	    dec	    hex	filename
-  61340	    468	   2508	  64316	   fb3c	SAGE_MCU.elf
-Finished building: default.size.stdout
- 
-Finished building: SAGE_MCU.list
- 
-13:40:12 **** Incremental Build of configuration Debug for project SAGE_MCU ****
-make -j12 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: SAGE_MCU.elf
- 
-arm-none-eabi-size  SAGE_MCU.elf 
-arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
-   text	   data	    bss	    dec	    hex	filename
-  61016	    468	   2508	  63992	   f9f8	SAGE_MCU.elf
+  61348	    468	   2540	  64356	   fb64	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 Finished building: SAGE_MCU.list
  
-13:42:29 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+11:47:10 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:477:13: warning: 'TX_Odom' defined but not used [-Wunused-function]
+  477 | static void TX_Odom(void)
+      |             ^~~~~~~
 arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 Finished building target: SAGE_MCU.elf
  
 arm-none-eabi-size  SAGE_MCU.elf 
 arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
    text	   data	    bss	    dec	    hex	filename
-  60572	    468	   2508	  63548	   f83c	SAGE_MCU.elf
+  61368	    468	   2540	  64376	   fb78	SAGE_MCU.elf
+Finished building: default.size.stdout
+ 
+Finished building: SAGE_MCU.list
+ 
+11:48:05 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:477:13: warning: 'TX_Odom' defined but not used [-Wunused-function]
+  477 | static void TX_Odom(void)
+      |             ^~~~~~~
+arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SAGE_MCU.elf
+ 
+arm-none-eabi-size  SAGE_MCU.elf 
+arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
+   text	   data	    bss	    dec	    hex	filename
+  61368	    468	   2540	  64376	   fb78	SAGE_MCU.elf
+Finished building: default.size.stdout
+ 
+Finished building: SAGE_MCU.list
+ 
+11:49:27 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:477:13: warning: 'TX_Odom' defined but not used [-Wunused-function]
+  477 | static void TX_Odom(void)
+      |             ^~~~~~~
+arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SAGE_MCU.elf
+ 
+arm-none-eabi-size  SAGE_MCU.elf 
+arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
+   text	   data	    bss	    dec	    hex	filename
+  61368	    468	   2540	  64376	   fb78	SAGE_MCU.elf
+Finished building: default.size.stdout
+ 
+Finished building: SAGE_MCU.list
+ 
+11:52:51 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:477:13: warning: 'TX_Odom' defined but not used [-Wunused-function]
+  477 | static void TX_Odom(void)
+      |             ^~~~~~~
+arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SAGE_MCU.elf
+ 
+arm-none-eabi-size  SAGE_MCU.elf 
+arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
+   text	   data	    bss	    dec	    hex	filename
+  61380	    468	   2540	  64388	   fb84	SAGE_MCU.elf
+Finished building: default.size.stdout
+ 
+Finished building: SAGE_MCU.list
+ 
+11:53:24 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:477:13: warning: 'TX_Odom' defined but not used [-Wunused-function]
+  477 | static void TX_Odom(void)
+      |             ^~~~~~~
+arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SAGE_MCU.elf
+ 
+arm-none-eabi-size  SAGE_MCU.elf 
+arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
+   text	   data	    bss	    dec	    hex	filename
+  61380	    468	   2540	  64388	   fb84	SAGE_MCU.elf
+Finished building: default.size.stdout
+ 
+Finished building: SAGE_MCU.list
+ 
+11:54:18 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:477:13: warning: 'TX_Odom' defined but not used [-Wunused-function]
+  477 | static void TX_Odom(void)
+      |             ^~~~~~~
+arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SAGE_MCU.elf
+ 
+arm-none-eabi-size  SAGE_MCU.elf 
+arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
+   text	   data	    bss	    dec	    hex	filename
+  61380	    468	   2540	  64388	   fb84	SAGE_MCU.elf
+Finished building: default.size.stdout
+ 
+Finished building: SAGE_MCU.list
+ 
+11:55:05 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:477:13: warning: 'TX_Odom' defined but not used [-Wunused-function]
+  477 | static void TX_Odom(void)
+      |             ^~~~~~~
+arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SAGE_MCU.elf
+ 
+arm-none-eabi-size  SAGE_MCU.elf 
+arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
+   text	   data	    bss	    dec	    hex	filename
+  61396	    468	   2540	  64404	   fb94	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 Finished building: SAGE_MCU.list
