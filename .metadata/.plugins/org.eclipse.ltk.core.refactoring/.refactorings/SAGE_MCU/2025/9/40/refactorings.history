@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;SAGE_MCU/SAGE.ioc&apos; to &apos;SAGE_MCU.ioc&apos;" description="Rename resource &apos;SAGE.ioc&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="SAGE.ioc" name="SAGE_MCU.ioc" stamp="1759169303044" updateReferences="true"/>
+</session>
