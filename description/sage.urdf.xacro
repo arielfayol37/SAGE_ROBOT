@@ -128,6 +128,33 @@
     <origin xyz="0 0 ${lidar_height}" rpy="0 0 ${pi}"/> <!-- LIDAR mounted 180 degrees rotated I think -->
   </joint>
 
+  <!-- === IMU Link === -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.03 0.03 0.01"/> <!-- Example dimensions for the IMU -->
+      </geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.03 0.03 0.01"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.05"/> <!-- Example mass for the IMU -->
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="imu_mount" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0.085725 -0.0635 ${base_z + base_thickness/2.0}" rpy="0 ${pi/2} 0"/> <!-- Corrected z-coordinate -->
+  </joint>
+
   <!-- === Nav2 footprint (optional) === -->
   <link name="base_footprint"/>
   <joint name="base_link_to_footprint" type="fixed">
