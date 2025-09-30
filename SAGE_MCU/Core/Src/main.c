@@ -263,14 +263,14 @@ IMU_Data_t Read_IMU(void)
     // Accel → m/s^2
     d.ax = (raw_ax / ACCEL_SENSE) * 9.80665f;
     d.ay = (raw_ay / ACCEL_SENSE) * 9.80665f;
-    d.az = (raw_az / ACCEL_SENSE) * 9.80665f - 10.75f; // weird ass persistent bias removal
+    d.az = (raw_az / ACCEL_SENSE) * 9.80665f; // weird ass persistent bias removal
 
     // Gyro → rad/s
     float gx_dps = raw_gx / GYRO_SENSE;
     float gy_dps = raw_gy / GYRO_SENSE;
     float gz_dps = raw_gz / GYRO_SENSE;
 
-    d.gx = gx_dps * (float)M_PI / 180.0f - 0.04f;
+    d.gx = gx_dps * (float)M_PI / 180.0f;
     d.gy = gy_dps * (float)M_PI / 180.0f;
     d.gz = gz_dps * (float)M_PI / 180.0f;
 
@@ -478,8 +478,8 @@ static void TX_Odom(void)
 {
     uint8_t buf[3 + LEN_ODOM]; // SOF, TYPE, LEN + payload
     buf[0] = SOF;
-    //buf[1] = TYPE_ODOM;
-    //buf[2] = LEN_ODOM;
+    buf[1] = TYPE_ODOM;
+    buf[2] = LEN_ODOM;
 
     // payload: x, y, theta, v, w (float32 LE)
     memcpy(&buf[3],      &robot_X,   4);
@@ -495,15 +495,15 @@ static void TX_Imu(const IMU_Data_t* d)
 {
     uint8_t buf[3 + LEN_IMU];
     buf[0] = SOF;
-    //buf[1] = TYPE_IMU;
-    //buf[2] = LEN_IMU;
+    buf[1] = TYPE_IMU;
+    buf[2] = LEN_IMU;
 
-    memcpy(&buf[1],      &d->gx, 4);
-    memcpy(&buf[1 + 4],  &d->gy, 4);
-    memcpy(&buf[1 + 8],  &d->gz, 4);
-    memcpy(&buf[1 + 12], &d->ax, 4);
-    memcpy(&buf[1 + 16], &d->ay, 4);
-    memcpy(&buf[1 + 20], &d->az, 4);
+    memcpy(&buf[3],      &d->gx, 4);
+    memcpy(&buf[3 + 4],  &d->gy, 4);
+    memcpy(&buf[3 + 8],  &d->gz, 4);
+    memcpy(&buf[3 + 12], &d->ax, 4);
+    memcpy(&buf[3 + 16], &d->ay, 4);
+    memcpy(&buf[3 + 20], &d->az, 4);
 
     HAL_UART_Transmit(&huart2, buf, sizeof(buf), HAL_MAX_DELAY);
 }
@@ -564,7 +564,7 @@ int main(void)
 
 	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
 	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
-	const uint32_t imu_period    = 1000U / 33;     // 10 ms  -> 100 Hz
+	const uint32_t imu_period    = 1000U / 100;     // 10 ms  -> 100 Hz
 
 	uint32_t next_tick     = HAL_GetTick();
 	uint32_t next_odom_tx  = HAL_GetTick();
@@ -593,7 +593,7 @@ int main(void)
 
 		// 50 Hz odom TX
 		if ((int32_t)(now - next_odom_tx) >= 0) {
-			//TX_Odom();
+			TX_Odom();
 			next_odom_tx += odom_period;
 		}
 

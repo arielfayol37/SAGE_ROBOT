@@ -446,3 +446,33 @@ Command-line arguments:  -os win32 -ws win32 -arch x86_64
 !MESSAGE OK
 !SUBENTRY 1 org.eclipse.core.resources 4 77 2025-09-30 10:49:47.763
 !MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'
+!SESSION 2025-09-30 12:03:50.044 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_US
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2025-09-30 12:03:58.376
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2025-09-30 12:03:58.378
+!MESSAGE Log4j2 initialized with config file C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-09-30 12:04:04.704
+!MESSAGE Started RMI Server, listening on port 41337
+!SESSION 2025-09-30 13:14:44.245 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_US
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2025-09-30 13:14:55.183
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2025-09-30 13:14:55.183
+!MESSAGE Log4j2 initialized with config file C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-09-30 13:15:02.196
+!MESSAGE Started RMI Server, listening on port 41337
