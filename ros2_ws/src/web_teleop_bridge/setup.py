@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='agi',
     maintainer_email='arielfayol1@gmail.com',
-    description='Bridge between WebRTC and ros2',
+    description='Bridge between WebRTC, MCU, and ros2',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
@@ -23,6 +23,7 @@ setup(
             'my_node = web_teleop_bridge.my_node:main',
             'control_bridge = web_teleop_bridge.control_bridge:main',
             'serial_bridge = web_teleop_bridge.serial_bridge:main',
+            'serial_bridge_with_imu = web_teleop_bridge.serial_bridge_with_imu:main',
         ],
     },
 )

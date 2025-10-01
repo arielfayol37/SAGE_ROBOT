@@ -77,6 +77,8 @@ ros2 launch slam_toolbox online_async_launch.py
 ros2 launch nav2_bringup navigation_launch.py \
   params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml \
   use_sim_time:=false
+
+ros2 run robot_localization ekf_node --ros-args --params-file ~/Desktop/SAGE_ROBOT/config/ekf.yaml
 ```
 
 ```

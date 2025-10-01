@@ -87,7 +87,7 @@ tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   cd $HOME/Desktop/SAGE_ROBOT
-  ros2 launch nav2_bringup localization_launch.py map:=gellersen_latest_loop_save.yaml || { echo localization + /map publisher failed; sleep 5; }
+  ros2 launch nav2_bringup localization_launch.py map:=Good_Gelly_Save_MAP.yaml || { echo localization + /map publisher failed; sleep 5; }
   exec bash
 '"
 
