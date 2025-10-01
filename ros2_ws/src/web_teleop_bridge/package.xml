@@ -3,7 +3,7 @@
 <package format="3">
   <name>web_teleop_bridge</name>
   <version>0.0.0</version>
-  <description>Bridge between WebRTC and ros2</description>
+  <description>Bridge between WebRTC, MCU, and ros2</description>
   <maintainer email="arielfayol1@gmail.com">agi</maintainer>
   <license>Apache-2.0</license>
 
