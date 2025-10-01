@@ -41,8 +41,8 @@
 #define MOTOR2_DIR_PIN  GPIO_PIN_8
 #define MOTOR2_PWM_CCR  TIM2->CCR4
 
-#define Lw  0.35f // Distance between wheels (m)
-#define WHEEL_DIAMETER  0.1f // Wheel size (m)
+#define Lw  0.465f // Distance between wheels (m)
+#define WHEEL_DIAMETER  0.101f // Wheel size (m)
 #define GEAR_RATIO  7.3333f // Ratio from the motor to the wheel
 #define Max_RPM  3000.0f // motor speed at 100% speed (guess from aliexpress listing, this needs to be calculated)
 
@@ -561,14 +561,14 @@ int main(void)
 	IMU_Init(); // ts pmo sybau
 
 
-
 	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
 	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
 	const uint32_t imu_period    = 1000U / 100;     // 10 ms  -> 100 Hz
 
-	uint32_t next_tick     = HAL_GetTick();
-	uint32_t next_odom_tx  = HAL_GetTick();
-	uint32_t next_imu_tx   = HAL_GetTick();
+	uint32_t currentTime;
+	uint32_t prevUpdateTime = 0;
+	uint32_t prevTXTime = 0;
+	uint32_t prevIMUTime = 0;
 
 	HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // start reciever
 
@@ -583,25 +583,22 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-		uint32_t now = HAL_GetTick();
+		currentTime = HAL_GetTick();
 
-		// 100 Hz control
-		while ((int32_t)(now - next_tick) >= 0) {
+		if( (currentTime - prevUpdateTime) >= tick_period){
 			Control_Update();
-			next_tick += tick_period;
+			prevUpdateTime = currentTime;
 		}
 
-		// 50 Hz odom TX
-		if ((int32_t)(now - next_odom_tx) >= 0) {
+		if( (currentTime - prevTXTime) >= odom_period){
 			TX_Odom();
-			next_odom_tx += odom_period;
+			prevTXTime = currentTime;
 		}
 
-		// 100–200 Hz IMU TX
-		if ((int32_t)(now - next_imu_tx) >= 0) {
-			IMU_Data_t d = Read_IMU();        // consider bias removal here
+		if( (currentTime - prevIMUTime) >= imu_period){
+			IMU_Data_t d = Read_IMU();   // consider bias removal here
 			TX_Imu(&d);
-			next_imu_tx += imu_period;
+			prevIMUTime = currentTime;
 		}
 
 	}
