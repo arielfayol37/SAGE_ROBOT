@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 export TERM=xterm-256color
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
 
 set -Eeuo pipefail
 
@@ -17,7 +19,7 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
 
-  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)
+  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sagewithimu.urdf.xacro)
 
   ros2 run robot_state_publisher robot_state_publisher \
     --ros-args -p robot_description:=\"\$DESCRIPTION\" \
@@ -68,11 +70,28 @@ tmux new-window -t "$SESSION" -n "Teleop Bridge" "bash -lc '
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  ros2 run web_teleop_bridge serial_bridge || { echo serial_bridge failed; sleep 5; }
+  ros2 run web_teleop_bridge serial_bridge_with_imu || { echo serial_bridge failed; sleep 5; }
   exec bash
 '"
 
+# 6) EKF (odom filter)
+tmux new-window -t "$SESSION" -n "EKF (odom filter)" "bash -lc '
+  source $ROS_SETUP || true
+  source $WS_SETUP || true
 
+  # Wait until upstream topics exist (Serial Bridge up)
+  echo \"[EKF] waiting for /imu/data and /odom...\"
+  until ros2 topic list | grep -q \"^/imu/data\$\"; do sleep 0.5; done
+  until ros2 topic list | grep -q \"^/odom\$\"; do sleep 0.5; done
+
+  # Give Serial Bridge time to finish IMU calibration
+  sleep 6
+
+  # Run EKF with matching node name so YAML applies
+  ros2 run robot_localization ekf_node --ros-args --params-file ~/Desktop/SAGE_ROBOT/config/ekf.yaml || { echo EKF failed; sleep 5; }
+
+  exec bash
+'"
 
 # 7) Lidar Scan publisher
 tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
@@ -86,7 +105,8 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
 tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  ros2 launch slam_toolbox online_async_launch.py || { echo localization + /map publisher failed; sleep 5; }
+  cd $HOME/Desktop/SAGE_ROBOT
+  ros2 launch nav2_bringup localization_launch.py map:=Good_Gelly_Save_MAP.yaml || { echo localization + /map publisher failed; sleep 5; }
   exec bash
 '"
 
@@ -94,7 +114,7 @@ tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  ros2 launch nav2_bringup navigation_launch.py params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml use_sim_time:=false || { echo nav2 failed; sleep 5; }
+  ros2 launch nav2_bringup navigation_launch.py params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml use_sim_time:=false map_subscribe_transient_local:=true || { echo nav2 failed; sleep 5; }
   exec bash
 '"
 

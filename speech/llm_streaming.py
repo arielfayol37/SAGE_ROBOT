@@ -25,6 +25,178 @@ except Exception:
 
 from RealtimeSTT import AudioToTextRecorder
 from RealtimeTTS import TextToAudioStream, SystemEngine, GTTSEngine, CoquiEngine
+# ---- Nav2 async bridge (non-blocking) ----
+import threading, rclpy
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
+from nav2_msgs.action import NavigateToPose
+from geometry_msgs.msg import PoseStamped
+from action_msgs.msg import GoalStatus
+
+class Nav2AsyncBridge(Node):
+    def __init__(self):
+        super().__init__('nav2_llm_bridge_async')
+        self.client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+        self.goal_handle = None
+        self.status = "idle"          # idle | navigating | arrived | failed | cancelling
+        self.current_target = None
+        self.last_feedback = {}
+
+    def set_goal(self, *, frame_id, x, y, ox, oy, oz, ow, location_name):
+        self.current_target = location_name
+        self.status = "navigating"
+
+        # Preempt old goal if any
+        if self.goal_handle:
+            try:
+                self.goal_handle.cancel_goal_async()
+            except Exception:
+                pass
+
+        if not self.client.wait_for_server(timeout_sec=0.5):
+            self.status = "failed"
+            return "Nav2 action server not available."
+
+        pose = PoseStamped()
+        pose.header.frame_id = frame_id or 'map'
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.pose.position.x = float(x)
+        pose.pose.position.y = float(y)
+        pose.pose.orientation.x = float(ox)
+        pose.pose.orientation.y = float(oy)
+        pose.pose.orientation.z = float(oz)
+        pose.pose.orientation.w = float(ow)
+
+        goal = NavigateToPose.Goal()
+        goal.pose = pose
+
+        def _feedback_cb(fb):
+            try:
+                f = fb.feedback
+                # available: current_pose, navigation_time, number_of_recoveries, distance_remaining
+                self.last_feedback = {
+                    "distance_remaining": getattr(f, "distance_remaining", 0.0),
+                    "recoveries": getattr(f, "number_of_recoveries", 0),
+                }
+            except Exception:
+                pass
+
+        send_fut = self.client.send_goal_async(goal, feedback_callback=_feedback_cb)
+
+        def _after_send(fut):
+            try:
+                gh = fut.result()
+                if not gh or not gh.accepted:
+                    self.status = "failed"
+                    return
+                self.goal_handle = gh
+                res_fut = gh.get_result_async()
+
+                def _after_result(rf):
+                    try:
+                        res = rf.result()                    # GetResult.Response
+                        st = res.status                      # int (GoalStatus.*)
+                        if st == GoalStatus.STATUS_SUCCEEDED:
+                            self.status = "arrived"
+                            try:
+                                enqueue_arrival(self.current_target)
+                            except Exception:
+                                pass
+                        elif st == GoalStatus.STATUS_CANCELED:
+                            self.status = "idle"
+                        else:
+                            # ABORTED or others
+                            self.status = "failed"
+                    except Exception:
+                        self.status = "failed"
+
+                res_fut.add_done_callback(_after_result)
+            except Exception:
+                self.status = "failed"
+
+        send_fut.add_done_callback(_after_send)
+        return "Goal accepted (navigating)."
+
+    def cancel_goal(self):
+        if not self.goal_handle:
+            return "No active goal."
+        self.status = "cancelling"
+        fut = self.goal_handle.cancel_goal_async()
+        def _after_cancel(_):
+            self.status = "idle"
+            self.goal_handle = None
+        fut.add_done_callback(_after_cancel)
+        return "Cancel requested."
+
+# Spin ROS in a background thread once at startup
+_nav_exec = None
+_nav_node = None
+def start_ros_background():
+    global _nav_exec, _nav_node
+    if _nav_node: 
+        return
+    if not rclpy.ok():
+        rclpy.init()
+    _nav_node = Nav2AsyncBridge()
+    _nav_exec = MultiThreadedExecutor()
+    _nav_exec.add_node(_nav_node)
+    threading.Thread(target=_nav_exec.spin, daemon=True).start()
+
+def nav_status():
+    if not _nav_node:
+        return {"status": "offline"}
+    return {
+        "status": _nav_node.status,
+        "target_name": getattr(_nav_node, "current_target", None),  # <-- changed
+        "feedback": _nav_node.last_feedback,
+    }
+# -------------------------
+# Waypoints (PoseStamped-like)
+# -------------------------
+
+WAYPOINTS = {
+    "Fites": {
+        "frame_id": "map",
+        "x": 5.020315170288086, "y": 0.5106609463691711,
+        "ox": 0.0, "oy": 0.0, "oz": 0.6982647334138825, "ow": 0.7158396203553137
+    },
+    "Gelly_Delly": {
+        "frame_id": "map",
+        "x": 22.26424217224121, "y": -3.0069425106048584,
+        "ox": 0.0, "oy": 0.0, "oz": 0.058206536467100216, "ow": 0.9983045623017578
+    },
+    "GE_100": {
+        "frame_id": "map",
+        "x": 43.25941467285156, "y": -2.9542574882507324,
+        "ox": 0.0, "oy": 0.0, "oz": 0.017809096604719063, "ow": 0.9998414054629483
+    },
+    "ECE_LAB_1": {
+        "frame_id": "map",
+        "x": 55.77067565917969, "y": 29.38323402404785,
+        "ox": 0.0, "oy": 0.0, "oz": -0.7288416827551458, "ow": 0.6846822631547039
+    },
+    "ECE_LAB_2": {
+        "frame_id": "map",
+        "x": 42.942630767822266, "y": 31.10202980041504,
+        "ox": 0.0, "oy": 0.0, "oz": -0.982344960779826, "ow": 0.1870785343925971
+    },
+    "HESSE_CENTER": {
+        "frame_id": "map",
+        "x": 83.51174926757812, "y": -6.202152252197266,
+        "ox": 0.0, "oy": 0.0, "oz": 0.010512876726070833, "ow": 0.9999447381845371
+    },
+    "3D_PRINTING_LAB": {
+        "frame_id": "map",
+        "x": 50.47529983520508, "y": -14.694130897521973,
+        "ox": 0.0, "oy": 0.0, "oz": 0.009561396317804793, "ow": 0.9999542888054703
+    },
+    "VALPO_ROBOTICS": {
+        "frame_id": "map",
+        "x": 46.69096374511719, "y": -32.61865234375,
+        "ox": 0.0, "oy": 0.0, "oz": 0.9991932193368056, "ow": 0.040161056153322494
+    },
+}
 
 # =========================
 # Config / Flags
@@ -68,10 +240,6 @@ is_recording_flag = False
 nav_epoch = 0
 current_target = None
 
-_last_status = None
-_last_arrived_at = None
-_last_destinations = None
-
 client = None
 stream = None
 recorder = None
@@ -96,229 +264,130 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "update_robot_route",
-            "description": "Update the robot's route with one or more destinations.",
+            "name": "set_goal",
+            "description": "Start or update Nav2 goal to a named waypoint. Returns immediately.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "destinations": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of EXACT short building names (e.g., ['GEMC'])."
-                    },
-                    "clear_existing": {
-                        "type": "boolean",
-                        "description": "If true, replace any existing route."
-                    }
+                    "location": {"type": "string", "description": f"One of: {', '.join(WAYPOINTS.keys())}"}
                 },
-                "required": ["destinations"]
+                "required": ["location"]
             }
         }
     },
     {
         "type": "function",
         "function": {
-            "name": "cancel_robot_route",
-            "description": "Cancel the robot's route or a specific destination.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "destination": {
-                        "type": "string",
-                        "description": "Optional: cancel only this specific destination."
-                    }
-                }
-            }
+            "name": "cancel_goal",
+            "description": "Cancel the current Nav2 goal (if any).",
+            "parameters": {"type": "object", "properties": {}}
         }
     }
 ]
 
 def generate_system_prompt():
-    """Generate system prompt with current robot status"""
-    robot_info = get_robot_status()
+    """
+    Generate system prompt with current robot status (real robot, Nav2 only).
+    - Avoids x, y or low-level values
+    - Shows only status, target name, distance remaining (if moving)
+    - Lists available waypoint names
+    - Describes tools: set_goal(location), cancel_goal()
+    """
+    # --- Runtime status ---
+    status_lines = []
+    try:
+        ns = nav_status()
+        if ns and isinstance(ns, dict):
+            nav2_status = ns.get("status", "unknown").lower()
+            tgt = ns.get("target_name") or ns.get("target_xy")
+            fb = ns.get("feedback") or {}
 
-    base_prompt = """You are a tour guide AI robot called Sage at Valparaiso University's College of Engineering.
+            status_lines.append(f"- Navigation status: {nav2_status.capitalize()}")
+            if tgt:
+                if isinstance(tgt, str):
+                    status_lines.append(f"- Current goal: {tgt}")
+                elif isinstance(tgt, (list, tuple)) and len(tgt) >= 2:
+                    status_lines.append(f"- Moving toward active goal")
+            if fb.get("distance_remaining") is not None and nav2_status == "navigating":
+                try:
+                    dr = float(fb["distance_remaining"])
+                    status_lines.append(f"- Distance remaining: {dr:.1f} meters")
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
-Your job is to guide visitors through the engineering facilities and campus based on their voice commands. You have detailed knowledge of the main engineering facilities and can provide informative tours.
+    status_section = ""
+    if status_lines:
+        status_section = "\n\nCURRENT ROBOT STATUS:\n" + "\n".join(status_lines)
 
-IMPORTANT: When using tools to control yourself, you MUST use the EXACT building names listed below. You are responsible for understanding user requests and mapping them to these exact identifiers.
+    # --- Waypoint list ---
+    waypoint_names = sorted(WAYPOINTS.keys())
+    waypoints_bulleted = "\n".join(f"- {name}" for name in waypoint_names)
 
-TOUR FLOW POLICY (Single-Stop Mode by default)
-- Never schedule more than one destination at a time.
-- Acknowledge full multi-stop requests, but only send the FIRST stop now.
-- Call update_robot_route with exactly one destination and clear_existing=true.
-- On arrival, enter Talk Phase:
-  1) Deliver a concise intro (10-15 seconds).
-  2) Ask at least one preference question (e.g., quick overview, deep dive, or hands-on?).
-  3) Offer options: continue here, pick the next stop, or end the tour.
-- Only after the user confirms, send the next single destination.
-- If the user goes silent after arrival, politely prompt once, then wait.
-- If user says “do all,” still proceed one stop at a time unless explicitly told to batch.
+    base_prompt = f"""You are a tour guide robot named Sage at Valparaiso University's College of Engineering.
 
-TOOL USAGE RULE
-- update_robot_route: always 1 destination, clear_existing=true.
-- cancel_robot_route: use to stop current movement before changing plans.
+Your job is to guide visitors by driving to named campus locations and engaging them with short, helpful dialogue.
 
-MAIN ENGINEERING FACILITIES (with detailed knowledge and exact building names):
-- GEMC: The main engineering building housing the College of Engineering. This is the heart of engineering education at Valpo. (Aliases: "main engineering building", "Gellersen", "engineering building", "Gellersen Engineering", "GEMC")
-- Fites: A 13,470 sq ft addition opened in 2011 that adds undergraduate labs for senior design, energy/materials research, and manufacturing (Aliases: "Senior Design Space", "engineering innovation center", "Donald V. Fites")
-- SERF: Houses one of just five solar furnaces in the U.S. — the only one at an undergraduate institution. Features a 20x20 ft heliostat feeding a concentrator with 303 mirrors and a louver system. The reactor routinely exceeds 3,000°F, enabling solar-fuels research. Located just east of GEMC. (Aliases: "solar furnace", "solar energy facility", "Markiewicz facility", "solar research")
-- Hesse: Drop-in academic support hub for engineering students in GEM 121, providing free tutoring and study help. (Aliases: "tutoring center", "learning center", "Hesse Learning Center", "academic support")
-- iHub: Open, cross-disciplinary maker space with tools from 3D printers and laser cutters/etchers to low-tech craft supplies, used for prototyping and student projects. (Aliases: "makerspace", "innovation hub", "3D printing lab", "prototyping lab", "maker space")
+IMPORTANT:
+- Always use the exact waypoint names listed below when calling tools.
+- Convert user requests to one exact location before calling tools.
+- Keep responses in plain English with no special characters.
 
-OTHER CAMPUS LOCATIONS (can guide to but limited details - use exact building names):
-- Library: Main library with late-night hours and 24/7 Community Room (Aliases: "Christopher Center", "main library", "university library")
-- Chapel: Iconic campus landmark dedicated 1959, seats ~2,000, added to National Register of Historic Places in 2021 (Aliases: "Chapel of the Resurrection", "Brandt Campanile", "campus chapel", "main chapel")
-- Science: Center for the Sciences (2017) with modern wet-labs for Chemistry, Biochemistry & Biology (Aliases: "science complex", "CFS", "NSC", "Center for the Sciences")
-- Meteorology: Home base for meteorology program with weather observation deck and radiosonde launcher (Aliases: "Kallay-Christopher Hall", "weather station", "meteorology building")
-- ARC: 5,000-seat arena for basketball/volleyball, includes gym, pool, indoor track (Aliases: "Athletics-Recreation Center", "gym", "basketball arena", "recreation center")
-- Museum: University art museum with 5,000+ piece collection (Aliases: "Brauer Museum", "art museum", "university museum")
-- Weseman: previously law school, now for psychology and sociology classes (Aliases: "Weseman Hall", "Weseman", "law school", "psychology", "sociology")
-- Lebien: for Nursing classes (Aliases: "Lebien Hall", "Lebien", "Nursing")
-- Lankenau: Residential hall for freshman. Closed since 2023.
-- Alumni: Residential hall for freshman.
-- Brandt: Residential hall for freshman.
-- Founders: refectory where students eat.
-- Kretzmann: administrative offices.
-- Nielsen: institute for Sex Education.
-- Ateufack: School of AI.
+WAYPOINTS YOU CAN DRIVE TO:
+{waypoints_bulleted}
 
-ROOM NAME MAPPING RULES:
-1. ALWAYS use the exact building names (GEMC, Fites, SERF, Hesse, iHub, Library, Chapel, Science, Meteorology, ARC, Museum, Weseman, Lebien, Lankenau, Alumni, Brandt, Founders, Kretzmann, Nielsen, Ateufack)
-2. When users say things like "take me to the main engineering building", you understand they mean GEMC
-3. When users say "show me the solar furnace", you understand they mean SERF
-4. When users say "let's go to the makerspace", you understand they mean iHub
-5. Convert ALL natural language requests to exact building names before calling tools
+TOOLS YOU CAN USE:
+- set_goal(location): Starts driving to the given waypoint. Non-blocking — you can talk while moving.
+- cancel_goal(): Cancels the current goal.
 
-TOUR FLOW EXAMPLES:
-- User: "Give me a tour of the engineering facilities"
-- AI Response: "I'll start by taking you to GEMC, the main engineering building. This is the heart of engineering education at Valpo. Let me navigate there first."
-- AI Action: update_robot_route(["GEMC"])
-- After Arrival: "Welcome to GEMC! This building houses the College of Engineering and is where students learn mechanical, electrical, and computer engineering. Would you like to see the solar furnace next, or do you have questions about GEMC?"
+WHILE MOVING:
+- You may speak to the user.
+- Keep speech short while navigating.
+- Do not schedule a new goal unless the user changes their mind (then cancel first).
+- If the user asks “where are you?” — use the status section below to answer.
 
-- User: "Take me on a campus tour"
-- AI Response: "I'll start with the iconic Chapel of the Resurrection, then we can explore other highlights. Let me take you there first."
-- AI Action: update_robot_route(["Chapel"])
-- After Arrival: "Here we are at the Chapel of the Resurrection, dedicated in 1959 and added to the National Register of Historic Places in 2021. It seats about 2,000 people. Would you like to see the library next, or explore another area?"
+ON ARRIVAL:
+- Deliver a short 10-15 second intro.
+- Ask exactly one short follow-up question.
+- Wait for a reply before driving anywhere else.
 
-You have tools available to control yourself:
-- update_robot_route: Set new destinations or add to existing route
-- cancel_robot_route: Cancel specific or all destinations
+CONVERSATION STYLE:
+- Be helpful, warm, and concise.
+- Do not use *, #, or _ characters in your responses.
+"""
 
-When giving tours, focus on the engineering facilities where you have detailed knowledge. For other locations, you can guide visitors there but provide basic information only. Always confirm what you're doing e.g. "Alright, let's go to Fites!". Be enthusiastic about Valparaiso University's engineering program and facilities."""
+    return base_prompt + status_section if status_section else base_prompt
 
-    if robot_info:
-        robot_data = robot_info["data"]
-        position = robot_data.get("position", {"x": 0, "y": 0, "z": 0})
-        destinations = robot_data.get("destinations", [])
-        mode = robot_data.get("mode", "unknown")
-        status = robot_data.get("status", "unknown")
-
-        status_section = f"""
-
-CURRENT ROBOT STATUS:
-- Position: ({position['x']:.1f}, {position['y']:.1f}, {position['z']:.1f})
-- Current destinations: {destinations if destinations else 'None'}
-- Mode: {mode}
-- Status: {status}
-
-Use this information to make informed decisions about routes and respond appropriately to the user's requests. DO NOT USE SPECIAL CHARACTERS LIKE *, #, OR _ IN YOUR RESPONSE. Just plain text. Keep your responses short and concise."""
-        return base_prompt + status_section
-    else:
-        return base_prompt + "\n\nNote: Robot status unavailable - robot may not be connected."
 
 # =========================
 # Robot backend
 # =========================
-def get_robot_status():
-    try:
-        r = requests.get(f"{ROBOT_BACKEND_URL}/robots", timeout=5)
-        if VERBOSE_ROBOT:
-            log(f"📡 GET /robots -> {r.status_code}", lvl="NET")
-        if r.status_code == 200:
-            data = r.json()
-            if VERBOSE_ROBOT:
-                log(f"📡 payload: {data}", lvl="NET")
-            if data.get("connected_robots", 0) > 0:
-                robot_id = list(data.get("robot_states", {}).keys())[0]
-                return {"robot_id": robot_id, "data": data["robot_states"][robot_id]}
-        return None
-    except Exception:
-        pass
-        # log_exc("get_robot_status")
-        return None
-
-def update_robot_route(destinations, clear_existing=False):
+def set_goal(location: str):
     global nav_epoch, current_target
-    if SINGLE_STOP_MODE and len(destinations) > 1:
-        if VERBOSE_TOOLS:
-            log(f"🔧 SINGLE_STOP_MODE trim {destinations} -> {destinations[:1]}")
-        destinations = destinations[:1]
-        clear_existing = True
+    start_ros_background()
+    if location not in WAYPOINTS:
+        return f"Unknown location '{location}'. Valid: {', '.join(WAYPOINTS.keys())}"
+    wp = WAYPOINTS[location]
+    nav_epoch += 1                 # <-- add
+    current_target = location      # <-- add
+    msg = _nav_node.set_goal(
+        frame_id=wp.get("frame_id", "map"),
+        x=wp["x"], y=wp["y"], ox=wp["ox"], oy=wp["oy"], oz=wp["oz"], ow=wp["ow"],
+        location_name=location,
+    )
+    return f"{msg} Target={location}."
 
-    if VERBOSE_TOOLS:
-        log(f"🔧 update_robot_route called with: destinations={destinations}, clear_existing={clear_existing}")
 
-    try:
-        robot_info = get_robot_status()
-        if not robot_info:
-            return "Error: No robot connected"
-
-        robot_id = robot_info["robot_id"]
-        if VERBOSE_ROBOT:
-            log(f"🤖 Robot ID: {robot_id}", lvl="NET")
-
-        current_target = destinations[0] if destinations else None
-        nav_epoch += 1
-
-        payload = {"destinations": destinations, "clear_existing": clear_existing}
-        if VERBOSE_ROBOT:
-            log(f"📤 POST /robots/{robot_id}/route {payload}", lvl="NET")
-        r = requests.post(f"{ROBOT_BACKEND_URL}/robots/{robot_id}/route", json=payload, timeout=5)
-        if VERBOSE_ROBOT:
-            log(f"📥 Response status: {r.status_code}", lvl="NET")
-
-        if r.status_code == 200:
-            action = "Updated" if not clear_existing else "Set new"
-            msg = f"{action} robot route to: {', '.join(destinations)}"
-            if VERBOSE_TOOLS:
-                log(f"✅ {msg}")
-            return msg
-        err = f"Failed to update route: {r.status_code}"
-        if VERBOSE_TOOLS:
-            log(f"❌ {err}")
-        return err
-    except Exception:
-        log_exc("update_robot_route")
-        return "Error updating route"
-
-def cancel_robot_route(destination=None):
-    if VERBOSE_TOOLS:
-        log(f"🔧 cancel_robot_route called with: destination={destination}")
-    try:
-        robot_info = get_robot_status()
-        if not robot_info:
-            return "Error: No robot connected"
-
-        robot_id = robot_info["robot_id"]
-        if destination:
-            r = requests.delete(f"{ROBOT_BACKEND_URL}/robots/{robot_id}/route/{destination}", timeout=5)
-        else:
-            r = requests.delete(f"{ROBOT_BACKEND_URL}/robots/{robot_id}/route", timeout=5)
-        if VERBOSE_ROBOT:
-            log(f"📥 Cancel response status: {r.status_code}", lvl="NET")
-
-        if r.status_code == 200:
-            return "Cancelled route" if not destination else f"Cancelled destination: {destination}"
-        return f"Failed to cancel route: {r.status_code}"
-    except Exception:
-        log_exc("cancel_robot_route")
-        return "Error cancelling route"
+def cancel_goal():
+    start_ros_background()
+    return _nav_node.cancel_goal()
 
 funcs = {
-    "update_robot_route": update_robot_route,
-    "cancel_robot_route": cancel_robot_route,
+    "set_goal": set_goal,
+    "cancel_goal": cancel_goal,
 }
+
 
 # =========================
 # Recorder callbacks (barge-in)
@@ -393,27 +462,6 @@ def event_dispatcher():
             reply_text, _ = process_by_llm_streaming(messages=messages, tools=tools)
 
         log(f"🗣️  Spoke arrival ({target}), chars={len(reply_text)}")
-
-def robot_watcher():
-    global _last_status, _last_arrived_at, _last_destinations
-    while not shutdown_flag:
-        info = get_robot_status()
-        if info:
-            data = info["data"]
-            status = data.get("status")
-            arrived_at = data.get("arrived_at")
-            destinations = data.get("destinations")
-
-            if arrived_at and arrived_at != _last_arrived_at:
-                _last_arrived_at = arrived_at
-                target = data.get("current_target") or (destinations[0] if destinations else arrived_at)
-                if target:
-                    enqueue_arrival(target)
-
-            _last_status = status
-            _last_destinations = destinations
-
-        time.sleep(POLLING_INTERVAL)
 
 # =========================
 # TTS helpers
@@ -702,6 +750,15 @@ def handle_sigint(sig, frame):
             stream.stop()
     except Exception:
         pass
+    try:
+        if _nav_exec and _nav_node:
+            _nav_exec.remove_node(_nav_node)
+        if _nav_exec:
+            _nav_exec.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
     sys.exit(0)
 
 signal.signal(signal.SIGINT, handle_sigint)
@@ -729,8 +786,8 @@ if __name__ == "__main__":
 
     # ---- Background workers ----
     threading.Thread(target=event_dispatcher, daemon=True).start()
-    threading.Thread(target=robot_watcher, daemon=True).start()
-
+    start_ros_background()
+    
     device = "cuda" if torch.cuda.is_available() else "cpu"
     log(f"Using device: {device}")
     # ---- STT init ----

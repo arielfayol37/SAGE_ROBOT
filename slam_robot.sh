@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 export TERM=xterm-256color
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
 
 set -Eeuo pipefail
 
@@ -86,8 +88,7 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
 tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  cd $HOME/Desktop/SAGE_ROBOT
-  ros2 launch nav2_bringup localization_launch.py map:=Good_Gelly_Save_MAP.yaml || { echo localization + /map publisher failed; sleep 5; }
+  ros2 launch slam_toolbox online_async_launch.py || { echo localization + /map publisher failed; sleep 5; }
   exec bash
 '"
 
@@ -95,7 +96,7 @@ tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  ros2 launch nav2_bringup navigation_launch.py params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml use_sim_time:=false map_subscribe_transient_local:=true || { echo nav2 failed; sleep 5; }
+  ros2 launch nav2_bringup navigation_launch.py params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml use_sim_time:=false || { echo nav2 failed; sleep 5; }
   exec bash
 '"
 
