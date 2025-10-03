@@ -3,6 +3,12 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="false"/>
 	<list key="searchhistory">
+		<item value="rxPacket"/>
+		<item value="rx_byte"/>
+		<item value="theta"/>
+		<item value="TX_IMU"/>
+		<item value="LEN_ODOM"/>
+		<item value="SOF"/>
 		<item value="hi2c2"/>
 	</list>
 </section>

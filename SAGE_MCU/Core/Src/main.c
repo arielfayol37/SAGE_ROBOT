@@ -134,14 +134,8 @@ static float i_term_L = 0.0f;
 static float i_term_R = 0.0f;
 
 // ----- RX state -----
-static uint8_t  rx_state = 0;      // 0: wait SOF, 1: TYPE, 2: LEN, 3: PAYLOAD
-static uint8_t  rx_type = 0;
-static uint8_t  rx_len  = 0;
-static uint8_t  rx_pay[32];        // enough for our largest payload
-static uint8_t  rx_pay_idx = 0;
+uint8_t rxPacket[9];  // 1 header + 8 bytes for two floats
 
-// kick off single-byte interrupt read at init: HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
-static uint8_t rx_byte;
 
 // ±2 g, ±250 dps on MPU‑9250
 static const float ACCEL_SENSE = 16384.0f;   // LSB/g
@@ -409,6 +403,13 @@ void Control_Update(void)
 	speed_L = clampf(Velocity_To_PWM(desired_speed_L + uL), -DUTY_MAX_PCT, DUTY_MAX_PCT);
 	speed_R = clampf(Velocity_To_PWM(desired_speed_R + uR), -DUTY_MAX_PCT, DUTY_MAX_PCT);
 
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);  // this is for the fucked up nidec motors that dont want to move sometimes
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET); //stupid code for defective motors
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+
 	Set_Motor_Speed(1,  speed_R);
 	Set_Motor_Speed(2, -speed_L);
 }
@@ -417,62 +418,24 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2)
 	{
-		uint8_t b = rx_byte;
 
-		switch (rx_state)
+		if (rxPacket[0] == 120)   // header byte (e.g. 'x')
 		{
-		case 0: // wait SOF
-		if (b == SOF) { rx_state = 1; }
-		break;
+			//Control_Packet(rxPacket[1]); // process control byte if needed
+			memcpy(&v, &rxPacket[1], sizeof(float)); // copy 4 bytes starting at rxPacket[1] into v
+			memcpy(&w, &rxPacket[1 + sizeof(float)], sizeof(float)); // copy next 4 bytes into w
 
-		case 1: // TYPE
-			rx_type = b;
-			rx_state = 2;
-			break;
+			Robot_Set_Velocity(v, w);
 
-		case 2: // LEN
-			rx_len = b;
-			if (rx_len > sizeof(rx_pay)) {
-				// invalid length -> reset
-				rx_state = 0;
-			} else {
-				rx_pay_idx = 0;
-				rx_state = (rx_len == 0) ? 0 : 3;
-			}
-			break;
+			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 
-		case 3: // PAYLOAD
-			rx_pay[rx_pay_idx++] = b;
-			if (rx_pay_idx >= rx_len) {
-				// full frame received -> dispatch
-				if (rx_type == TYPE_CMD && rx_len == LEN_CMD) {
-					float v_in, w_in;
-					memcpy(&v_in, &rx_pay[0], 4);
-					memcpy(&w_in, &rx_pay[4], 4);
-					// (optional) limit here if you want:
-							// v_in = clampf(v_in, -V_MAX, V_MAX);
-					// w_in = clampf(w_in, -W_MAX, W_MAX);
-					Robot_Set_Velocity(v_in, w_in);
-				}
-				// else: ignore unknown type/len
-
-				// reset for next frame
-				rx_state = 0;
-			}
-			break;
 		}
-
-		// re-arm 1-byte RX
-		HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+		// restart interrupt reception
+		HAL_UART_Receive_IT(&huart2, rxPacket, sizeof(rxPacket));
 	}
 }
 
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
-	if (huart->Instance == USART2) {
-		rx_state = 0;
-		HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
-	}
-}
+
 
 static void TX_Odom(void)
 {
@@ -569,7 +532,7 @@ int main(void)
 	uint32_t prevTXTime = 0;
 	uint32_t prevIMUTime = 0;
 
-	HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // start reciever
+	HAL_UART_Receive_IT(&huart2, rxPacket, 9); // start receiver
 
 
 

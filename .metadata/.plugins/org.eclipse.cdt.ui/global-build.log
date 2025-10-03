@@ -1,4 +1,4 @@
-17:14:31 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+20:57:32 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
 arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
@@ -7,19 +7,19 @@ Finished building target: SAGE_MCU.elf
 arm-none-eabi-size  SAGE_MCU.elf 
 arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
    text	   data	    bss	    dec	    hex	filename
-  61660	    468	   2540	  64668	   fc9c	SAGE_MCU.elf
+  61492	    468	   2508	  64468	   fbd4	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 Finished building: SAGE_MCU.list
  
-17:14:35 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+20:57:41 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-size  SAGE_MCU.elf 
    text	   data	    bss	    dec	    hex	filename
-  61660	    468	   2540	  64668	   fc9c	SAGE_MCU.elf
+  61492	    468	   2508	  64468	   fbd4	SAGE_MCU.elf
 Finished building: default.size.stdout
  
-17:14:45 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+21:33:51 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
 arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
@@ -28,7 +28,28 @@ Finished building target: SAGE_MCU.elf
 arm-none-eabi-size  SAGE_MCU.elf 
 arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
    text	   data	    bss	    dec	    hex	filename
-  61644	    468	   2540	  64652	   fc8c	SAGE_MCU.elf
+  61524	    468	   2508	  64500	   fbf4	SAGE_MCU.elf
+Finished building: default.size.stdout
+ 
+Finished building: SAGE_MCU.list
+ 
+21:37:57 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+make -j12 all 
+arm-none-eabi-size  SAGE_MCU.elf 
+   text	   data	    bss	    dec	    hex	filename
+  61524	    468	   2508	  64500	   fbf4	SAGE_MCU.elf
+Finished building: default.size.stdout
+ 
+21:52:04 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SAGE_MCU.elf
+ 
+arm-none-eabi-size  SAGE_MCU.elf 
+arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
+   text	   data	    bss	    dec	    hex	filename
+  61556	    468	   2508	  64532	   fc14	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 Finished building: SAGE_MCU.list
