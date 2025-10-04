@@ -74,8 +74,6 @@ tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   exec bash
 '"
 
-
-
 # 7) Lidar Scan publisher
 tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   source $ROS_SETUP || true
@@ -84,12 +82,22 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   exec bash
 '"
 
+# Speech
+tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
+  cd $HOME/Desktop/SAGE_ROBOT
+  source .venv/bin/activate
+  cd $HOME/Desktop/SAGE_ROBOT/speech
+  python llm_streaming.py || { echo speech failed; sleep 5; }
+  exec bash
+'"
+
 # 8) Map Publisher (plus localization)
-tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
+tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   cd $HOME/Desktop/SAGE_ROBOT
-  ros2 launch nav2_bringup localization_launch.py map:=Good_Gelly_Save_MAP.yaml || { echo localization + /map publisher failed; sleep 5; }
+  ros2 launch nav2_bringup localization_launch.py map:=Good_Gelly_Save_MAP.yaml \
+  params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml || { echo localization + /map publisher failed; sleep 5; }
   exec bash
 '"
 
