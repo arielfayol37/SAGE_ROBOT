@@ -84,12 +84,12 @@ class SerialCmdVelAndRx(Node):
     def on_cmd_vel(self, msg: Twist):
         v = float(msg.linear.x)
         w = float(msg.angular.z)
+        # keep your existing binary TX format: 0x78 'x' + v + w (float32 little-endian)
+        pkt = struct.pack('<Bff', 0x78, v, w)
         try:
-            header = struct.pack('<BBB', SOF, TYPE_CMD, LEN_CMD)
-            payload = struct.pack(FMT_CMD, v, w)
-            n = self.ser.write(header + payload)
-            if n != (3 + LEN_CMD):
-                self.get_logger().warn(f"short write {n}/{3+LEN_CMD}")
+            n = self.ser.write(pkt)
+            if n != 9:
+                self.get_logger().warn(f"short write {n}/9")
         except Exception as e:
             self.get_logger().error(f"serial write failed: {e}")
 
