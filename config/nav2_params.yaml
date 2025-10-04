@@ -117,7 +117,7 @@ controller_server:
       yaw_goal_tolerance: 0.25
       stateful: true
 
-    FollowPathOld: # previous controller, kept for reference
+    FollowPath: 
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       desired_linear_vel: 0.8 
       lookahead_dist: 0.6
@@ -147,7 +147,7 @@ controller_server:
       min_distance_to_obstacle: 0.0
       stateful: true
 
-    FollowPath:  
+    FollowPathOld: # previous controller, kept for reference
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: false
       min_vel_x: 0.0
