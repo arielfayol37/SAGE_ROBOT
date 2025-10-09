@@ -115,7 +115,7 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   cd $HOME/Desktop/SAGE_ROBOT
-  ros2 launch nav2_bringup localization_launch.py map:=Good_Gelly_Save_MAP.yaml \
+  ros2 launch nav2_bringup localization_launch.py map:=/home/agi/Desktop/SAGE_ROBOT/maps/Good_Gelly_Save_MAP.yaml \
   params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml || { echo localization + /map publisher failed; sleep 5; }
   exec bash
 '"

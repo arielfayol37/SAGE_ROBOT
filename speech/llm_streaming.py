@@ -1,5 +1,3 @@
-# llm4.py — Streaming OpenAI -> RealtimeTTS with feed-first playback, working tool calls, shared-context events, and robust logging
-
 import os
 import sys
 import signal
@@ -24,7 +22,7 @@ except Exception:
         return key
 
 from RealtimeSTT import AudioToTextRecorder
-from RealtimeTTS import TextToAudioStream, SystemEngine, GTTSEngine, CoquiEngine
+from RealtimeTTS import TextToAudioStream, SystemEngine, GTTSEngine, CoquiEngine, PiperEngine, PiperVoice
 # ---- Nav2 async bridge (non-blocking) ----
 import threading, rclpy
 from rclpy.action import ActionClient
@@ -208,7 +206,7 @@ VERBOSE_ROBOT = False
 VERBOSE_TTS = True
 VERBOSE_STT = True
 
-TTS_MODE = os.getenv("TTS_MODE", "balanced")
+TTS_MODE = os.getenv("TTS_MODE", ["balanced", "fast", "natural"][2]) # balanced | fast | natural
 MODEL_NAME = "gpt-4o"
 POLLING_INTERVAL = 1
 
@@ -772,7 +770,8 @@ def on_wakeword():
 if __name__ == "__main__":
     # ---- TTS init (engine selection) ----
     try:
-        engine = GTTSEngine()
+        engine = PiperEngine(voice=PiperVoice("./en_US-amy-medium.onnx"), piper_path="/home/agi/Desktop/SAGE_ROBOT/.venv/bin/piper")
+        # engine = GTTSEngine()
         # engine = SystemEngine()
         # engine = CoquiEngine()
         #engine.set_voice("Claribel Dervla")

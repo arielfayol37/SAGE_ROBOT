@@ -303,7 +303,7 @@ behavior_server:
 map_server:
   ros__parameters:
     use_sim_time: false
-    yaml_filename: "/home/agi/Desktop/SAGE_ROBOT/Good_Gelly_Save_MAP.yaml"  
+    yaml_filename: "/home/agi/Desktop/SAGE_ROBOT/maps/Good_Gelly_Save_MAP.yaml"  
 
 map_saver:
   ros__parameters:

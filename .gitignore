@@ -1,6 +1,7 @@
 .*venv/
 __pycache__/
 speech/api_keys.json
+speech/*.onnx
 models/
 *api_keys.json
 startup.err
