@@ -103,9 +103,9 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
 
 # Speech
 tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT
-  source .venv/bin/activate
-  cd $HOME/Desktop/SAGE_ROBOT/speech
+  cd $HOME/Desktop/SAGE_ROBOT || true
+  source .venv/bin/activate  || true
+  cd $HOME/Desktop/SAGE_ROBOT/speech || true
   python llm_streaming.py || { echo speech failed; sleep 5; }
   exec bash
 '"
