@@ -207,7 +207,7 @@ VERBOSE_TTS = True
 VERBOSE_STT = True
 
 TTS_MODE = os.getenv("TTS_MODE", ["balanced", "fast", "natural"][2]) # balanced | fast | natural
-MODEL_NAME = "gpt-4o"
+MODEL_NAME = "gpt-4.1-nano"
 POLLING_INTERVAL = 1
 
 SINGLE_STOP_MODE = True
