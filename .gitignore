@@ -8,6 +8,7 @@ startup.err
 startup.log
 *.log
 *.err
+speech/realtimesst.log
 # ROS2 build, install, and log directories (not needed if already ignored by default)
 # Standard ROS2 ignore patterns
 build/
