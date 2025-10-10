@@ -7,7 +7,7 @@ import queue
 import requests
 import openai
 import traceback
-import re
+import subprocess
 import torch
 
 # Use your utils if available
@@ -170,7 +170,7 @@ ROBOT_BACKEND_URL = "http://127.0.0.1:8002"
 llm_thinking = ROBOT_BACKEND_URL + "/llm_thinking/"
 llm_recording = ROBOT_BACKEND_URL + "/llm_recording/"
 
-
+ALSA_DEVICE = None  # e.g., "hw:1,0" after checking `aplay -l`
 # =========================
 # Globals
 # =========================
@@ -627,18 +627,30 @@ def handle_sigint(sig, frame):
 
 signal.signal(signal.SIGINT, handle_sigint)
 
+def play_wav(path: str, device: str | None = ALSA_DEVICE):
+    """Fire-and-forget WAV playback using ALSA 'aplay'."""
+    if not os.path.isfile(path):
+        return
+    cmd = ["aplay", "-q"]
+    if device:
+        cmd += ["-D", device]
+    cmd.append(path)
+    # Non-blocking so STT can start immediately
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+ready_chime_path = "assets/audio/ui-wakesound.wav"
 def on_wakeword():
     if tts.is_playing():
         tts.stop()  # stop ONLY on “sage”
+    threading.Thread(target=play_wav, args=(ready_chime_path,), daemon=True).start()
 # =========================
 # Main
 # =========================
 if __name__ == "__main__":
     # ---- TTS init (engine selection) ----
     try:
-        ALSA_DEVICE = None  # e.g., "hw:1,0" after checking `aplay -l`
         tts = PiperTTS(
-            model_path="models/piper/en_US-amy-medium.onnx",
+            model_path="assets/models/piper/en_US-amy-medium.onnx",
             aplay_device=ALSA_DEVICE,
             buffer_time_us=40000,   # tune: 40000–120000
             period_size=256         # tune: 256/512/1024
@@ -674,7 +686,7 @@ if __name__ == "__main__":
     if USE_WAKEWORD:
         recorder_kwargs.update(
             wakeword_backend=["pvporcupine", "openwakeword"][1],
-            openwakeword_model_paths="models/wakeword/sage_wakeword.onnx",
+            openwakeword_model_paths="assets/models/wakeword/sage_wakeword.onnx",
             openwakeword_inference_framework="onnx",
             wake_words_sensitivity=0.5,      # try 0.7–0.85 in a school
             wake_word_buffer_duration=0.75,  # 0.75–1.0s keeps “sage” out of transcript,
