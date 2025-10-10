@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="sage">
+  <!-- === Dimensions === -->
+  <xacro:property name="base_width" value="0.3691"/>
+  <xacro:property name="base_length" value="0.4083"/>
+  <xacro:property name="base_thickness" value="0.02"/>
+
+  <xacro:property name="wheel_radius" value="0.0505"/>
+  <xacro:property name="front_wheel_radius" value="0.0415"/>
+  <xacro:property name="wheel_thickness" value="0.0254"/>
+  <xacro:property name="wheel_x_from_back" value="0.0658"/>
+  <xacro:property name="front_wheel_x_from_front" value="0.04572"/>
+  <xacro:property name="lidar_height" value="0.2124"/>
+
+  <xacro:property name="base_z" value="0.08731"/>
+  <xacro:property name="half_len" value="${base_length/2.0}"/>
+  <xacro:property name="half_wid" value="${base_width/2.0}"/>
+  <xacro:property name="track_width" value="0.4953"/>
+  <xacro:property name="half_track" value="${track_width / 2.0}"/>
+  <xacro:property name="rear_wheel_x" value="${-half_len + wheel_x_from_back}"/>
+
+  <!-- === Materials === -->
+  <material name="grey"><color rgba="0.5 0.5 0.5 1.0"/></material>
+  <material name="black"><color rgba="0.05 0.05 0.05 1.0"/></material>
+  <material name="blue"><color rgba="0.0 0.3 0.9 1.0"/></material>
+
+  <!-- === Base link === -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 ${base_z}" rpy="0 0 0"/>
+      <mass value="5.0"/>
+      <inertia ixx="0.2" ixy="0" ixz="0" iyy="0.2" iyz="0" izz="0.2"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 ${base_z + base_thickness/2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_thickness}"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${base_z + base_thickness/2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_thickness}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- === Drive Wheels === -->
+  <xacro:macro name="wheel" params="name y">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_thickness}"/>
+        </geometry>
+        <material name="blue"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_thickness}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.5"/>
+        <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+      </inertial>
+    </link>
+
+    <joint name="${name}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${name}"/>
+      <origin xyz="${rear_wheel_x} ${y} ${wheel_radius}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:wheel name="left_wheel" y="${half_track}"/>
+  <xacro:wheel name="right_wheel" y="${-half_track}"/>
+
+  <!-- === Passive Front Support Wheels === -->
+  <xacro:macro name="front_wheel" params="name y">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${front_wheel_radius}" length="${wheel_thickness}"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${front_wheel_radius}" length="${wheel_thickness}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.2"/>
+        <inertia ixx="0.0005" ixy="0" ixz="0" iyy="0.0005" iyz="0" izz="0.0005"/>
+      </inertial>
+    </link>
+
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${name}"/>
+      <origin xyz="${half_len - front_wheel_x_from_front} ${y} ${wheel_radius}" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:front_wheel name="front_left_wheel" y="${half_track}"/>
+  <xacro:front_wheel name="front_right_wheel" y="${-half_track}"/>
+
+  <!-- === LiDAR Link === -->
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="lidar_mount" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="0 0 ${lidar_height}" rpy="0 0 ${pi}"/> <!-- LIDAR mounted 180 degrees rotated I think -->
+  </joint>
+
+  <!-- === Nav2 footprint (optional) === -->
+  <link name="base_footprint"/>
+  <joint name="base_link_to_footprint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_footprint"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+</robot>

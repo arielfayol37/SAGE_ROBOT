@@ -6,7 +6,7 @@ import time
 import queue
 
 from RealtimeSTT import AudioToTextRecorder
-from RealtimeTTS import TextToAudioStream, SystemEngine, GTTSEngine, CoquiEngine
+from RealtimeTTS import TextToAudioStream, SystemEngine, GTTSEngine, CoquiEngine, PiperEngine, PiperVoice
 from utils import read_openai_key, json
 
 # Robot tour backend configuration
@@ -15,7 +15,7 @@ ROBOT_BACKEND_URL = 'http://127.0.0.1:8002'
 llm_thinking = ROBOT_BACKEND_URL + '/llm_thinking/'
 llm_recording = ROBOT_BACKEND_URL + '/llm_recording/'
 
-MODEL_NAME = "gpt-4o"
+MODEL_NAME = "gpt-4.1-nano"
 MAX_TOOL_CALLS = 5
 # -----------------------------
 # Global state & concurrency
@@ -104,7 +104,8 @@ def get_robot_status():
                 return {"robot_id": robot_id, "data": data["robot_states"][robot_id]}
         return None
     except Exception as e:
-        print(f"Error getting robot status: {e}")
+        # print(f"Error getting robot status: {e}")
+        pass
         return None
 
 
@@ -481,10 +482,11 @@ def robot_watcher():
 if __name__ == "__main__":
     # TTS / LLM init
     # engine = SystemEngine()
-    engine = GTTSEngine()
+    # engine = GTTSEngine()
+    engine = PiperEngine(voice=PiperVoice("models/piper/en_US-amy-medium.onnx"), piper_path="/home/agi/Desktop/SAGE_ROBOT/.venv/bin/piper")
     # engine = CoquiEngine()
     #engine.set_voice("Claribel Dervla")
-    stream = TextToAudioStream(engine)
+    stream = TextToAudioStream(engine, frames_per_buffer=1024)
 
     client = openai.OpenAI(api_key=read_openai_key("api_keys.json"))
     funcs = {"update_route": update_route, "cancel_route": cancel_route}
@@ -494,19 +496,19 @@ if __name__ == "__main__":
     threading.Thread(target=robot_watcher, daemon=True).start()
 
     recorder = AudioToTextRecorder(
-        wakeword_backend=["pvporcupine", "openwakeword"][1],
         language="en",
         spinner=True,
-        model=["large-v2", "small.en"][1],
+        model=["large-v2", "tiny.en"][1],
         device="cuda",
         on_recording_start=set_recording,
         on_recording_stop=unset_recording,
-        openwakeword_model_paths="sage.onnx",
-        openwakeword_inference_framework="onnx",
-        wake_words_sensitivity=0.1,      # try 0.7–0.85 in a school
-        wake_word_buffer_duration=0.75,   # 0.75–1.0s keeps “sage” out of transcript,
-        on_wakeword_detected=on_wakeword,
-        wake_words="sage" # You need to leave this here for openwakeword to work (even though it's not used)
+        # wakeword_backend=["pvporcupine", "openwakeword"][1],
+        # openwakeword_model_paths="models/wakeword/sage_wakeword.onnx",
+        # openwakeword_inference_framework="onnx",
+        # wake_words_sensitivity=0.1,      # try 0.7–0.85 in a school
+        # wake_word_buffer_duration=0.75,   # 0.75–1.0s keeps “sage” out of transcript,
+        # on_wakeword_detected=on_wakeword,
+        # wake_words="sage" # You need to leave this here for openwakeword to work (even though it's not used)
     )
 
     print("Ready to guide Valparaiso University engineering tours...")
@@ -526,6 +528,6 @@ if __name__ == "__main__":
             if stream.is_playing():
                 stream.stop()
             stream.feed(ai_reply)
-            stream.play_async()
+            stream.play()
             print("ai reply: ", ai_reply)
 

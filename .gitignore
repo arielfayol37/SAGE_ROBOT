@@ -1,4 +1,30 @@
 .*venv/
 __pycache__/
-backend/api_keys.json
+speech/api_keys.json
+speech/*.onnx
 models/
+*api_keys.json
+startup.err
+startup.log
+*.log
+*.err
+speech/realtimesst.log
+# ROS2 build, install, and log directories (not needed if already ignored by default)
+# Standard ROS2 ignore patterns
+build/
+install/
+log/
+.colcon/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# macOS system files
+.DS_Store
+
+# VS Code settings (optional)
+.vscode/
+
+# SLLIDAR ROS2 package build artifacts
+ros2_ws/src/sllidar_ros2/

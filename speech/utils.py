@@ -3,17 +3,6 @@ import requests
 import random
 import json
 
-feasibility_url = 'http://127.0.0.1:8000/check_feasible_items/'  # URL to check feasibility
-order_url = 'http://127.0.0.1:8000/order_items/'  # URL to place the order
-def check_feasibility(order):
-    payload = order
-    return str(requests.post(feasibility_url, json={'items': payload}).json())
-
-def place_order(order, tip=None):
-    tip = round(random.uniform(0, 10)) if tip is None else tip
-    payload = order
-    return str(requests.post(order_url, json={'items': payload, 'tip':round(random.uniform(0, 10), 2)}).json())
-
 # Function to read 'openai_key' from the JSON file
 def read_openai_key(json_file):
     try:
