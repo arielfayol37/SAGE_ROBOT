@@ -22,7 +22,7 @@ except Exception:
         return key
 
 from RealtimeSTT import AudioToTextRecorder
-from RealtimeTTS import TextToAudioStream, SystemEngine, GTTSEngine, CoquiEngine, PiperEngine, PiperVoice
+from piper_tts import PiperTTS
 # ---- Nav2 async bridge (non-blocking) ----
 import threading, rclpy
 from rclpy.action import ActionClient
@@ -31,6 +31,7 @@ from rclpy.executors import MultiThreadedExecutor
 from nav2_msgs.action import NavigateToPose
 from geometry_msgs.msg import PoseStamped
 from action_msgs.msg import GoalStatus
+from waypoints import WAYPOINTS
 
 class Nav2AsyncBridge(Node):
     def __init__(self):
@@ -149,52 +150,6 @@ def nav_status():
         "target_name": getattr(_nav_node, "current_target", None),  # <-- changed
         "feedback": _nav_node.last_feedback,
     }
-# -------------------------
-# Waypoints (PoseStamped-like)
-# -------------------------
-
-WAYPOINTS = {
-    "Fites": {
-        "frame_id": "map",
-        "x": 5.020315170288086, "y": 0.5106609463691711,
-        "ox": 0.0, "oy": 0.0, "oz": 0.6982647334138825, "ow": 0.7158396203553137
-    },
-    "Gelly_Delly": {
-        "frame_id": "map",
-        "x": 22.26424217224121, "y": -3.0069425106048584,
-        "ox": 0.0, "oy": 0.0, "oz": 0.058206536467100216, "ow": 0.9983045623017578
-    },
-    "GE_100": {
-        "frame_id": "map",
-        "x": 43.25941467285156, "y": -2.9542574882507324,
-        "ox": 0.0, "oy": 0.0, "oz": 0.017809096604719063, "ow": 0.9998414054629483
-    },
-    "ECE_LAB_1": {
-        "frame_id": "map",
-        "x": 55.77067565917969, "y": 29.38323402404785,
-        "ox": 0.0, "oy": 0.0, "oz": -0.7288416827551458, "ow": 0.6846822631547039
-    },
-    "ECE_LAB_2": {
-        "frame_id": "map",
-        "x": 42.942630767822266, "y": 31.10202980041504,
-        "ox": 0.0, "oy": 0.0, "oz": -0.982344960779826, "ow": 0.1870785343925971
-    },
-    "HESSE_CENTER": {
-        "frame_id": "map",
-        "x": 83.51174926757812, "y": -6.202152252197266,
-        "ox": 0.0, "oy": 0.0, "oz": 0.010512876726070833, "ow": 0.9999447381845371
-    },
-    "3D_PRINTING_LAB": {
-        "frame_id": "map",
-        "x": 50.47529983520508, "y": -14.694130897521973,
-        "ox": 0.0, "oy": 0.0, "oz": 0.009561396317804793, "ow": 0.9999542888054703
-    },
-    "VALPO_ROBOTICS": {
-        "frame_id": "map",
-        "x": 46.69096374511719, "y": -32.61865234375,
-        "ox": 0.0, "oy": 0.0, "oz": 0.9991932193368056, "ow": 0.040161056153322494
-    },
-}
 
 # =========================
 # Config / Flags
@@ -206,15 +161,8 @@ VERBOSE_ROBOT = False
 VERBOSE_TTS = True
 VERBOSE_STT = True
 
-TTS_MODE = os.getenv("TTS_MODE", ["balanced", "fast", "natural"][2]) # balanced | fast | natural
 MODEL_NAME = "gpt-4.1-nano"
-POLLING_INTERVAL = 1
 
-SINGLE_STOP_MODE = True
-
-# If a new LLM pass begins while audio is still playing, stop the old audio first
-FLUSH_AUDIO_ON_NEW_PASS = True
-SUPPRESS_PREAMBLE_IF_TOOLS = True
 # =========================
 # UI & backend endpoints
 # =========================
@@ -239,7 +187,7 @@ nav_epoch = 0
 current_target = None
 
 client = None
-stream = None
+tts = None
 recorder = None
 
 shutdown_flag = False
@@ -393,10 +341,10 @@ funcs = {
 def set_recording():
     global is_recording_flag
     try:
-        if stream and stream.is_playing():
+        if tts and tts.is_playing():
             if VERBOSE_TTS:
                 log("⏹️  TTS stop (barge-in)")
-            stream.stop()
+            tts.stop()
         is_recording_flag = True
         if VERBOSE_STT:
             log("🎙️  Recording START")
@@ -440,7 +388,7 @@ def event_dispatcher():
         epoch = ev.get("epoch")
         log(f"🛬 Processing arrival event: {target} at epoch {epoch}")
 
-        while (stream and stream.is_playing()) or is_recording_flag:
+        while (tts and tts.is_playing()) or is_recording_flag:
             time.sleep(0.05)
             if shutdown_flag:
                 return
@@ -461,77 +409,8 @@ def event_dispatcher():
 
         log(f"🗣️  Spoke arrival ({target}), chars={len(reply_text)}")
 
-# =========================
-# TTS helpers
-# =========================
-def fast_split(text: str):
-    # Lightweight, no-NLTK tokenizer for low-latency sentence fragments
-    return re.findall(r'[^.!?…]+[.!?…]?', text)
 
 
-
-TTS_PRESETS = {
-    # ~350–500 ms initial voice, ok for interjections
-    "fast": dict(
-        fast_sentence_fragment=True,
-        fast_sentence_fragment_allsentences=False,
-        fast_sentence_fragment_allsentences_multiple=False,
-        minimum_first_fragment_length=20,
-        force_first_fragment_after_words=7,
-        buffer_threshold_seconds=0.35,
-        sentence_fragment_delimiters=".?!…",
-        context_size=18,
-        context_size_look_overhead=24,
-    ),
-    # ~600–900 ms, natural for most conversations
-    "balanced": dict(
-        fast_sentence_fragment=True,               # keep fast startup only for first sentence
-        fast_sentence_fragment_allsentences=False,
-        fast_sentence_fragment_allsentences_multiple=False,
-        minimum_first_fragment_length=28,
-        minimum_sentence_length=30,
-        force_first_fragment_after_words=10,
-        buffer_threshold_seconds=0.65,
-        sentence_fragment_delimiters=".?!…",
-        context_size=24,
-        context_size_look_overhead=36,
-    ),
-    # prioritize prosody over latency
-    "natural": dict(
-        fast_sentence_fragment=False,
-        minimum_sentence_length=40,
-        buffer_threshold_seconds=0.8,
-        sentence_fragment_delimiters=".?!…",
-        context_size=32,
-        context_size_look_overhead=48,
-    ),
-}
-
-def tts_feed(text_or_iter, *, low_latency=True):
-    just_started = False
-    if not stream.is_playing():
-        if FLUSH_AUDIO_ON_NEW_PASS:
-            try:
-                stream.stop()
-            except Exception:
-                pass
-        just_started = True
-
-    stream.feed(text_or_iter)
-
-    if just_started:
-        if VERBOSE_TTS:
-            log("▶️  TTS play_async start")
-        kwargs = TTS_PRESETS[TTS_MODE]
-        stream.play_async(
-            # if you want your custom tokenizer, keep it;
-            # otherwise let RealtimeTTS handle sentence splitting
-            tokenize_sentences=fast_split if TTS_MODE != "natural" else None,
-            **kwargs,
-        )
-    else:
-        if VERBOSE_TTS:
-            log("↪️  TTS already playing; appended to stream")
 # =========================
 # OpenAI streaming
 # =========================
@@ -608,12 +487,11 @@ def process_by_llm_streaming(messages, tools, max_depth=3):
             pass
 
         while True:
-            # Stop old audio if desired
-            if FLUSH_AUDIO_ON_NEW_PASS and stream.is_playing():
+            if tts.is_playing():
                 if VERBOSE_TTS:
                     log("⏹️  TTS stop (new LLM pass)")
                 try:
-                    stream.stop()
+                    tts.stop()
                 except Exception:
                     pass
 
@@ -626,7 +504,6 @@ def process_by_llm_streaming(messages, tools, max_depth=3):
 
             full_text_parts = []
             assistant_tool_calls = None
-            playback_started = False
 
             try:
                 for kind, payload in stream_llm_events(
@@ -636,16 +513,7 @@ def process_by_llm_streaming(messages, tools, max_depth=3):
                     model=MODEL_NAME,
                 ):
                     if kind == "text":
-                        # Optionally buffer text until we know there are no tools
-                        if SUPPRESS_PREAMBLE_IF_TOOLS:
-                            full_text_parts.append(payload)
-                        else:
-                            if not playback_started:
-                                tts_feed(payload, low_latency=True)
-                                playback_started = True
-                            else:
-                                stream.feed(payload)
-                            full_text_parts.append(payload)
+                        full_text_parts.append(payload)
 
                     elif kind == "tools":
                         assistant_tool_calls = payload  # list of {"id","name","args"}
@@ -716,9 +584,7 @@ def process_by_llm_streaming(messages, tools, max_depth=3):
             log(f"💬 assistant text len={len(assistant_text)} (depth={depth})")
 
             if assistant_text.strip():
-                # Start playback now if we held back earlier
-                if SUPPRESS_PREAMBLE_IF_TOOLS and assistant_text:
-                    tts_feed(assistant_text, low_latency=True)
+                tts.say(assistant_text, block=False, interrupt=True)
                 with messages_lock:
                     messages.append({"role": "assistant", "content": assistant_text})
 
@@ -744,8 +610,8 @@ def handle_sigint(sig, frame):
     except Exception:
         pass
     try:
-        if stream and stream.is_playing():
-            stream.stop()
+        if tts and tts.is_playing():
+            tts.stop()
     except Exception:
         pass
     try:
@@ -762,26 +628,29 @@ def handle_sigint(sig, frame):
 signal.signal(signal.SIGINT, handle_sigint)
 
 def on_wakeword():
-    if stream.is_playing():
-        stream.stop()  # stop ONLY on “sage”
+    if tts.is_playing():
+        tts.stop()  # stop ONLY on “sage”
 # =========================
 # Main
 # =========================
 if __name__ == "__main__":
     # ---- TTS init (engine selection) ----
     try:
-        engine = PiperEngine(voice=PiperVoice("./en_US-amy-medium.onnx"), piper_path="/home/agi/Desktop/SAGE_ROBOT/.venv/bin/piper")
-        # engine = GTTSEngine()
-        # engine = SystemEngine()
-        # engine = CoquiEngine()
-        #engine.set_voice("Claribel Dervla")
+        ALSA_DEVICE = None  # e.g., "hw:1,0" after checking `aplay -l`
+        tts = PiperTTS(
+            model_path="models/piper/en_US-amy-medium.onnx",
+            aplay_device=ALSA_DEVICE,
+            buffer_time_us=40000,   # tune: 40000–120000
+            period_size=256         # tune: 256/512/1024
+        )
+        if VERBOSE_TTS:
+            log("✅ PiperTTS ready.")
     except Exception:
-        log("⚠️  Coqui/GTTSEngine init failed, falling back to SystemEngine", lvl="WARN")
-        engine = SystemEngine()
-    stream = TextToAudioStream(engine, frames_per_buffer=1024)
+        log("⚠️ PiperTTS init failed.", lvl="ERROR")
+        raise
 
     # ---- OpenAI client ----
-    client = openai.OpenAI(api_key=read_openai_key("api_keys.json"))
+    client = openai.OpenAI(api_key=read_openai_key("api_keys/api_keys.json"))
 
     # ---- Background workers ----
     threading.Thread(target=event_dispatcher, daemon=True).start()
@@ -790,21 +659,22 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     log(f"Using device: {device}")
     # ---- STT init ----
-    USE_WAKEWORD = False
+    USE_WAKEWORD = True
 
     recorder_kwargs = dict(
         language="en",
         spinner=True,
         model=["tiny.en", "small.en"][0],
-        device="cpu",
+        device=device,
         on_recording_start=set_recording,
         on_recording_stop=unset_recording,
+        no_log_file=True,
     )
 
     if USE_WAKEWORD:
         recorder_kwargs.update(
             wakeword_backend=["pvporcupine", "openwakeword"][1],
-            openwakeword_model_paths="sage.onnx",
+            openwakeword_model_paths="models/wakeword/sage_wakeword.onnx",
             openwakeword_inference_framework="onnx",
             wake_words_sensitivity=0.5,      # try 0.7–0.85 in a school
             wake_word_buffer_duration=0.75,  # 0.75–1.0s keeps “sage” out of transcript,
@@ -842,4 +712,4 @@ if __name__ == "__main__":
         # Stream model → TTS (tools allowed)
         with llm_lock:
             ai_reply, messages = process_by_llm_streaming(messages=messages, tools=tools)
-
+            log(f"🤖 AI: {ai_reply}")

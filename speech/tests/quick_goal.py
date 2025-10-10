@@ -1,5 +1,5 @@
 import sys
-from llm_streaming import start_ros_background, _nav_node, WAYPOINTS  
+from ..llm_streaming import start_ros_background, _nav_node, WAYPOINTS  
 
 if __name__ == "__main__":
     name = sys.argv[1] if len(sys.argv) > 1 else "Fites"
