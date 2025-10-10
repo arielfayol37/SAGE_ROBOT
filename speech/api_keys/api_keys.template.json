@@ -1,0 +1,6 @@
+{
+  "openai_api_key": "REPLACE_WITH_YOUR_OPENAI_KEY",
+  "anthropic_api_key": "REPLACE_WITH_YOUR_ANTHROPIC_KEY",
+  "xai_api_key": "REPLACE_WITH_YOUR_XAI_KEY",
+  "save_your_file_with_name": "api_keys.json"
+}

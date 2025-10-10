@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>SAGE Teleop</title>
+<style>
+  :root {
+    --ui-pad: 12px;
+    --wheel: 180px; --knob: 72px;
+    --glass: rgba(31,41,55,0.6);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; padding: var(--ui-pad);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0b0c10; color: #e5e7eb; overflow-y: auto; overscroll-behavior: contain;
+  }
+  h2 { margin: 4px 0 8px; }
+  #status { display:inline-block; padding:4px 10px; border-radius:10px; background:#1f2937; }
+  html, body, .wheel, .pedal, .toolbar, .sage-pov {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .wheel, .pedal { touch-action: none; } 
+  /* SAGE POV (keep your original look) */
+  .sage-pov {
+    --ph-black: #0f0f0f; --ph-white: #ffffff; --ph-orange: #f7981d; --tight: -0.5px;
+    margin: 0; line-height: 1; font-weight: 800;
+    font-size: clamp(28px, 4vw, 48px); text-transform: uppercase; letter-spacing: var(--tight);
+    font-family: "Montserrat", "Helvetica Neue", Arial, sans-serif;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .sage-pov .sage { color: var(--ph-white); }
+  .sage-pov .tag {
+    color: var(--ph-black); background: var(--ph-orange);
+    padding: 6px 10px 7px; border-radius: 8px; display: inline-block; letter-spacing: var(--tight);
+  }
+  .sage-pov .tag:hover {
+    filter: brightness(1.05); transform: translateY(-1px);
+    transition: transform 120ms ease, filter 120ms ease;
+  }
+
+  /* Camera */
+  #cam {
+    display:block; width:100%; height:auto; max-height:70svh; object-fit:contain;
+    margin:10px auto; background:#000; border:1px solid #374151; border-radius:10px;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    display:flex; align-items:center; gap:10px; margin:8px 0 4px; flex-wrap:wrap;
+  }
+  .toolbar input[type="range"] { width:220px; }
+
+  /* Steering wheel */
+  .wheel {
+    position: fixed; left: var(--ui-pad);
+    bottom: calc(var(--ui-pad) + env(safe-area-inset-bottom, 0));
+    width: var(--wheel); height: var(--wheel); border-radius:50%;
+    background: var(--glass); border:1px solid #374151; backdrop-filter: blur(4px);
+    touch-action: none; user-select:none;
+  }
+  .wheel .knob {
+    position:absolute; top:50%; left:50%;
+    width: var(--knob); height: var(--knob); border-radius:50%;
+    margin-left: calc(var(--knob)/-2); margin-top: calc(var(--knob)/-2);
+    background: rgba(99,102,241,0.9); border:2px solid rgba(255,255,255,0.15);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+    transform: translate(0px, 0px);
+  }
+  .wheel::after {
+    content:""; position:absolute; left:10%; right:10%; top:50%; height:2px;
+    transform: translateY(-1px);
+    background: rgba(255,255,255,0.12); border-radius:2px;
+  }
+
+  /* Pedals (right side) */
+  .pedals {
+    position: fixed; right: var(--ui-pad);
+    bottom: calc(var(--ui-pad) + env(safe-area-inset-bottom, 0));
+    display:flex; flex-direction: column; gap: 10px; z-index: 10; align-items: flex-end;
+  }
+  .pedal {
+    position: relative;
+    min-width: 140px; padding: 16px 20px;
+    border-radius: 16px; font-weight: 900; letter-spacing: .3px; font-size: 16px;
+    border:1px solid #374151; background:#1f2937; color:#fff; user-select:none;
+    touch-action: manipulation; transform: translateY(0); transition: transform 80ms ease, filter 80ms ease;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+  }
+  .pedal .fill {
+    position:absolute; left:0; top:0; bottom:0; width:0%;
+    border-radius: 16px; z-index:0; transition: width 60ms linear;
+  }
+  .pedal span.label { position:relative; z-index:1; }
+  .pedal.gas    { background:#166534; border-color:#14532d; }
+  .pedal.gas .fill    { background: rgba(34,197,94,0.45); }
+  .pedal.reverse{ background:#7f1d1d; border-color:#641919; }
+  .pedal.reverse .fill { background: rgba(239,68,68,0.45); }
+
+  .pedal.active {
+    transform: translateY(2px);
+    filter: brightness(1.05);
+  }
+
+  /* Tiny HUD bars for sent outputs */
+  .hud {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(8px + env(safe-area-inset-bottom, 0));
+    display:flex; gap: 8px; font-size:12px; opacity:0.9;
+  }
+  .bar {
+    width: 130px; height: 8px; background:#111827; border:1px solid #374151; border-radius: 999px; overflow:hidden;
+  }
+  .bar > div { height:100%; width:50%; background:#60a5fa; transition: width 60ms linear; }
+  .bar.neg > div { background:#f87171; }
+
+  @media (min-width: 900px) {
+    :root { --wheel: 220px; --knob: 84px; }
+    #cam { max-height: 78vh; }
+    .pedal { min-width: 160px; padding: 18px 24px; }
+  }
+</style>
+</head>
+<body>
+  <h2 class="sage-pov">
+    <span class="sage">SAGE</span><span class="tag">POV</span>
+  </h2>
+  <span id="status">Connecting…</span>
+
+  <div class="toolbar">
+    <label for="speedScale">Max speed</label>
+    <input id="speedScale" type="range" min="10" max="100" step="5" value="50" />
+    <span id="speedPct">50%</span>
+    <!--<span style="opacity:.7;">(scales linear & angular)</span>-->
+  </div>
+
+  <!-- Live camera (MJPEG) -->
+  <img id="cam" alt="camera" />
+
+  <!-- Left: Steering wheel (horizontal only) -->
+  <div class="wheel" id="steerWheel"><div class="knob"></div></div>
+
+  <!-- Right: Pedals (always reversible: GAS and REVERSE) -->
+  <div class="pedals">
+    <button class="pedal gas" id="gasBtn">
+      <div class="fill" id="gasFill"></div>
+      <span class="label">GAS</span>
+    </button>
+    <button class="pedal reverse" id="revBtn">
+      <div class="fill" id="revFill"></div>
+      <span class="label">REVERSE</span>
+    </button>
+  </div>
+
+  <!-- HUD showing what is actually being sent -->
+  <div class="hud">
+    <div class="bar" id="barX"><div></div></div>
+    <div class="bar neg" id="barZ"><div></div></div>
+  </div>
+
+<script>
+(() => {
+  ['contextmenu','selectstart','dragstart'].forEach(evt =>
+  document.addEventListener(evt, e => {
+    if (e.target.closest('.wheel, .pedal')) e.preventDefault();
+  }, { passive: false })
+);
+  /* ------- Streams & WS ------- */
+  const HOST = location.hostname || "JETSON_IP_HERE"; // set if opening file:// on phone
+  document.getElementById('cam').src =
+    "http://" + HOST + ":8080/stream?topic=/image_raw&type=mjpeg&width=480&height=270&quality=80";
+
+  const ws = new WebSocket("ws://" + HOST + ":8765");
+  const statusEl = document.getElementById('status');
+  ws.onopen  = () => { ws.send(JSON.stringify({ role: "browser" })); statusEl.textContent = "Connected"; };
+  ws.onclose = () => { statusEl.textContent = "Disconnected"; zero(); };
+  ws.onerror = () => { statusEl.textContent = "Error (see server logs)"; zero(); };
+
+  function send(x, z){
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "control", x, z }));
+  }
+
+  /* ------- Caps / speed scale (no persistence) ------- */
+  const MAX_X_BASE = 2;   // m/s  (robot capability)
+  const MAX_Z_BASE = 1.5;   // rad/s
+  let speedScale = 0.5;     // 0..1 (session only)
+  const speedEl = document.getElementById('speedScale');
+  const speedPct = document.getElementById('speedPct');
+  function caps(){ return { MAX_X: MAX_X_BASE * speedScale, MAX_Z: MAX_Z_BASE}; }
+  speedEl.addEventListener('input', e => {
+    speedScale = Number(e.target.value)/100;
+    speedPct.textContent = `${e.target.value}%`;
+  });
+
+  /* ------- Input shaping helpers ------- */
+  function deadzone(u, dz=0.10){           // kill jitter near center
+    if (Math.abs(u) < dz) return 0;
+    const s = Math.sign(u), a = (Math.abs(u)-dz)/(1-dz);
+    return s * a;
+  }
+  function expo(u, k=0.35){                // finer low‑speed control
+    const s = Math.sign(u), a = Math.abs(u);
+    return s * ((1-k)*a + k*a*a);
+  }
+  function stepToward(target, current, maxRate, dt){
+    const maxStep = maxRate * dt;
+    const d = target - current;
+    if (Math.abs(d) <= maxStep) return target;
+    return current + Math.sign(d) * maxStep;
+  }
+function curvatureScale(x, maxX){
+    const v = Math.abs(x) / Math.max(1e-6, maxX);
+    if (v < 0.1) return 1.0;                // ← full Z at (almost) zero linear speed
+    return 0.6 + 0.4*v;                      // gentle scaling when moving
+  }
+  /* ------- State ------- */
+  let targetX = 0, targetZ = 0;            // desired
+  let outX = 0, outZ = 0;                  // slewed
+  let lastX = 0, lastZ = 0;                // last sent
+  let lastT = performance.now();
+
+  // Slew rates (tune to taste)
+  const SLEW_X = 2.0;   // m/s^2
+  const SLEW_Z = 6.0;   // rad/s^2
+
+  /* ------- Steering wheel (horizontal only) ------- */
+  attachSteering(document.getElementById('steerWheel'), (nx) => {
+    const { MAX_Z } = caps();
+     // nx = expo(deadzone(nx));
+    nx = deadzone(nx, 0.05);    
+    targetZ = MAX_Z * (-nx); // left nx<0 -> +z
+  });
+
+function attachSteering(rootEl, onChange){
+  const knob = rootEl.querySelector('.knob');
+  let active = false, pid = null, center={x:0,y:0}, rBase=0, rKnob=0;
+
+  const setKnob = dx => knob.style.transform = `translate(${dx}px,0)`;
+
+  rootEl.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    active = true; pid = e.pointerId; rootEl.setPointerCapture(pid);
+    const rect = rootEl.getBoundingClientRect();
+    center = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+    rBase = Math.min(rect.width, rect.height)/2;
+    rKnob = knob.clientWidth/2;
+  });
+
+  rootEl.addEventListener('pointermove', e => {
+    if (!active || e.pointerId !== pid) return;
+    const r = rBase - rKnob/2;
+    let dx = e.clientX - center.x;
+    dx = Math.max(-r, Math.min(r, dx));
+    setKnob(dx);
+    onChange(dx / r); // [-1,1]
+  });
+
+  function end(e){
+    if (!active || (e && e.pointerId !== pid)) return;
+    active = false; rootEl.releasePointerCapture(pid); pid = null;
+    setKnob(0); onChange(0);
+  }
+  rootEl.addEventListener('pointerup', end);
+  rootEl.addEventListener('pointercancel', end);
+}
+  /* ------- Pedals (visual + stateful press) ------- */
+  const gasBtn  = document.getElementById('gasBtn');
+  const revBtn  = document.getElementById('revBtn');
+  const gasFill = document.getElementById('gasFill');
+  const revFill = document.getElementById('revFill');
+
+  let gasHeld=false, revHeld=false;
+
+  function holdable(btn, onDown, onUp){
+    let pid = null;
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault(); pid = e.pointerId; btn.setPointerCapture(pid);
+      btn.classList.add('active'); onDown();
+    });
+    function end(e){
+      if (pid === null || (e && e.pointerId !== pid)) return;
+      btn.releasePointerCapture(pid); pid = null;
+      btn.classList.remove('active'); onUp();
+    }
+    btn.addEventListener('pointerup', end);
+    btn.addEventListener('pointercancel', end);
+  }
+  holdable(gasBtn, ()=>{ gasHeld=true; }, ()=>{ gasHeld=false; });
+  holdable(revBtn, ()=>{ revHeld=true; }, ()=>{ revHeld=false; });
+
+  // Keyboard (optional)
+  document.addEventListener('keydown', e => {
+    if (["ArrowUp","w","W"].includes(e.key)) gasBtn.classList.add('active'), gasHeld = true;
+    if (["ArrowDown","s","S"].includes(e.key)) revBtn.classList.add('active'), revHeld = true;
+    if (["ArrowLeft","a","A"].includes(e.key)) targetZ =  caps().MAX_Z;
+    if (["ArrowRight","d","D"].includes(e.key)) targetZ = -caps().MAX_Z;
+  }, {passive:false});
+  document.addEventListener('keyup', e => {
+    if (["ArrowUp","w","W"].includes(e.key)) gasBtn.classList.remove('active'), gasHeld = false;
+    if (["ArrowDown","s","S"].includes(e.key)) revBtn.classList.remove('active'), revHeld = false;
+    if (["ArrowLeft","a","A","ArrowRight","d","D"].includes(e.key)) targetZ = 0;
+  }, {passive:false});
+
+  /* ------- HUD helpers ------- */
+  const barX = document.querySelector('#barX > div');
+  const barZ = document.querySelector('#barZ > div');
+  function setBar(el, v){ // v in [-1,1]
+    el.style.width = `${(Math.abs(v)*100).toFixed(0)}%`;
+  }
+
+  /* ------- Main loop (slew + send) ------- */
+  function loop(){
+    const now = performance.now();
+    const dt = Math.max(0.001, (now - lastT)/1000);
+    lastT = now;
+
+    // Pedal logic: mutually exclusive preference; if both pressed, cancel out (net 0)
+    const { MAX_X, MAX_Z } = caps();
+    const wantFwd = gasHeld   ?  1 : 0;
+    const wantRev = revHeld   ? -1 : 0;
+    const want    = wantFwd + wantRev;  // -1, 0, or +1
+    targetX = want * MAX_X;
+
+    // Slew-limit both axes
+    outX = stepToward(targetX, outX, SLEW_X, dt);
+    outZ = stepToward(targetZ, outZ, SLEW_Z, dt);
+
+    // Curvature drive (scale turning authority by forward speed)
+    const curvedZ = outZ * curvatureScale(outX, MAX_X);
+
+    // Update pedal fill to reflect commanded *target* intent (feels game-like)
+    gasFill.style.width = `${Math.max(0, targetX / Math.max(1e-6,  MAX_X)) * 100}%`;
+    revFill.style.width = `${Math.max(0, -targetX / Math.max(1e-6, MAX_X)) * 100}%`;
+
+    // HUD shows *sent* outputs (slewed)
+    setBar(barX, (outX / Math.max(1e-6, MAX_X)));            // [-1,1]
+    setBar(barZ, (curvedZ / Math.max(1e-6, MAX_Z)));         // [-1,1] approx
+
+    // Avoid WS spam by sending every frame (smooth) but it’s already throttled by slew
+    if (Math.abs(outX-lastX)>1e-3 || Math.abs(curvedZ-lastZ)>1e-3){
+      send(outX, curvedZ);
+      lastX = outX; lastZ = curvedZ;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  /* ------- Safety ------- */
+  function zero(){ targetX=0; targetZ=0; outX=0; outZ=0; send(0,0); gasFill.style.width="0%"; revFill.style.width="0%"; }
+  document.addEventListener('visibilitychange', ()=>{ if (document.hidden) zero(); });
+  window.addEventListener('blur', zero);
+
+})();
+</script>
+</body>
+</html>

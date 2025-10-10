@@ -57,3 +57,41 @@ The system uses a voice-based AI (`llm.py`) that can:
 ## Future: Engineering School Environment
 
 The system is designed to be easily adaptable for different engineering school environments by updating the facility descriptions and room layouts in the building generator and AI system prompt.
+
+# Some Commands
+Launch speech and teleop nodes
+
+```
+cd ~/Desktop/SAGE_ROBOT
+./start_robot.sh
+```
+
+Launch lidar, robot_state_publisher, and nav2
+```
+ros2 launch sllidar_ros2 view_sllidar_a1_launch.py
+
+ros2 launch sllidar_ros2 sllidar_a1_launch.py frame_id:=lidar_link
+
+ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$(xacro ~/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)"
+ros2 launch slam_toolbox online_async_launch.py
+ros2 launch nav2_bringup navigation_launch.py \
+  params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml \
+  use_sim_time:=false
+
+ros2 run robot_localization ekf_node --ros-args --params-file ~/Desktop/SAGE_ROBOT/config/ekf.yaml
+```
+
+```
+ls -l /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
+```
+
+```
+agi@SAGE:~$ ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$(xacro ~/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)"
+
+
+agi@SAGE:~/Desktop/SAGE_ROBOT/ros2_ws$ source install/local_setup.bash
+agi@SAGE:~/Desktop/SAGE_ROBOT/ros2_ws$ ros2 launch sllidar_ros2 sllidar_a1_launch.py frame_id:=lidar_link
+
+agi@SAGE:~$ ros2 launch slam_toolbox online_async_launch.py
+
+```
