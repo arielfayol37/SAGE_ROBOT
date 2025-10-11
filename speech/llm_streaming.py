@@ -689,7 +689,7 @@ if __name__ == "__main__":
             openwakeword_model_paths="assets/models/wakeword/sage_wakeword.onnx",
             openwakeword_inference_framework="onnx",
             wake_words_sensitivity=0.5,      # try 0.7–0.85 in a school
-            wake_word_buffer_duration=0.75,  # 0.75–1.0s keeps “sage” out of transcript,
+            wake_word_buffer_duration=0.3,  # 0.75-1s to keep "sage" out of transcript
             on_wakeword_detected=on_wakeword,
             wake_words="sage"  # You need to leave this here for openwakeword to work (even though it's not used)
         )
