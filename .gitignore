@@ -2,7 +2,7 @@
 __pycache__/
 speech/api_keys.json
 speech/*.onnx
-models/
+speech/assets/models/piper/
 *api_keys.json
 startup.err
 startup.log
