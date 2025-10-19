@@ -1,17 +1,24 @@
-21:52:04 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+13:46:34 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'Velocity_To_PWM':
+../Core/Src/main.c:336:15: warning: unused variable 'duty' [-Wunused-variable]
+  336 |         float duty = (motor_rpm / Max_RPM) * 100.0f;
+      |               ^~~~
+../Core/Src/main.c:339:1: warning: control reaches end of non-void function [-Wreturn-type]
+  339 | }
+      | ^
 arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 Finished building target: SAGE_MCU.elf
  
 arm-none-eabi-size  SAGE_MCU.elf 
 arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
    text	   data	    bss	    dec	    hex	filename
-  61556	    468	   2508	  64532	   fc14	SAGE_MCU.elf
+  61168	    468	   2500	  64136	   fa88	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 Finished building: SAGE_MCU.list
  
 
-21:52:07 Build Finished. 0 errors, 0 warnings. (took 2s.945ms)
+13:46:35 Build Finished. 0 errors, 2 warnings. (took 1s.280ms)
 
