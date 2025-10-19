@@ -33,13 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define MOTOR1_DIR_PORT GPIOA
-#define MOTOR1_DIR_PIN  GPIO_PIN_9
-#define MOTOR1_PWM_CCR  TIM1->CCR4
 
-#define MOTOR2_DIR_PORT GPIOA
-#define MOTOR2_DIR_PIN  GPIO_PIN_8
-#define MOTOR2_PWM_CCR  TIM2->CCR4
 
 #define Lw  0.4581f // Distance between wheels (m)
 #define WHEEL_DIAMETER  0.101f // Wheel size (m)
@@ -183,13 +177,6 @@ static inline float clampf(float x, float lo, float hi) {
 	return x;
 }
 
-static inline float ramp_to_target(float current, float target, float max_delta)
-{
-	if (target > current + max_delta)  return current + max_delta;
-	if (target < current - max_delta)  return current - max_delta;
-	return target;
-}
-
 void Motors_Init(void)
 {
 	// Start PWM channels
@@ -211,7 +198,6 @@ void Motors_Init(void)
 	enc_prev_R = 0;
 }
 
-
 static void IMU_Init(void)
 {
 	uint8_t data;
@@ -231,7 +217,6 @@ static void IMU_Init(void)
 	HAL_I2C_Mem_Write(&hi2c3, MPU9250_ADDR, PWR_MGMT_1, 1, &data, 1, 100);
 
 }
-
 
 IMU_Data_t Read_IMU(void)
 {
@@ -272,8 +257,6 @@ IMU_Data_t Read_IMU(void)
 	return d;
 }
 
-
-
 // Returns counts since last call; handles 16-bit wrap. Bind this to your actual encoder timers.
 int32_t encoder_delta_counts(TIM_HandleTypeDef *ht, int32_t *prev_accum)
 {
@@ -304,7 +287,7 @@ float counts_to_wheel_mps(int32_t delta_counts)
 	return wheel_rps * circumference;  // m/s
 }
 
-// Set speed: 1000–2000: 1500 = 0
+// Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
 void Motor_SetSpeed_L(float v)
 {
 	uint16_t speed = 1500 - 250 * v;
@@ -320,23 +303,6 @@ void Motor_SetSpeed_R(float v)
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, speed);
 }
 
-
-float Velocity_To_PWM(float v)
-{
-	// 1. wheel circumference
-	float circumference = (float)M_PI * WHEEL_DIAMETER;
-
-	// 2. wheel rpm needed
-	float wheel_rpm = (v / circumference) * 60.0f;
-
-	// 3. motor rpm required
-	float motor_rpm = wheel_rpm * GEAR_RATIO;
-
-	// 4. duty cycle (0–100 %)
-	float duty = (motor_rpm / Max_RPM) * 100.0f;
-
-
-}
 
 // v  = forward speed (m/s)
 // w  = angular speed (rad/s)
@@ -372,7 +338,6 @@ void Control_Update(void)
 	// Errors (m/s)
 	float eL = desired_speed_L - vL_meas;
 	float eR = desired_speed_R - vR_meas;
-
 
     // PI control (same as before)
     i_term_L += KI * eL * CTRL_DT;
@@ -944,7 +909,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LED_GREEN_Pin|GPIO_PIN_8|GPIO_PIN_9, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -958,13 +923,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(LED_GREEN_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PA8 PA9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

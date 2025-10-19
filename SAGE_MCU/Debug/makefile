@@ -60,8 +60,8 @@ all: main-build
 main-build: SAGE_MCU.elf secondary-outputs
 
 # Tool invocations
-SAGE_MCU.elf SAGE_MCU.map: $(OBJS) $(USER_OBJS) C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+SAGE_MCU.elf SAGE_MCU.map: $(OBJS) $(USER_OBJS) C:\Users\aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m0plus -T"C:\Users\aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
