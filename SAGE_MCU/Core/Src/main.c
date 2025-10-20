@@ -35,9 +35,9 @@
 /* USER CODE BEGIN PD */
 
 
-#define Lw  0.4581f // Distance between wheels (m)
+#define Lw  0.483 // Distance between wheels (m)
 #define WHEEL_DIAMETER  0.101f // Wheel size (m)
-#define GEAR_RATIO  7.3333f // Ratio from the motor to the wheel
+#define GEAR_RATIO  1.25f // Ratio from the motor to the wheel
 #define Max_RPM  3000.0f // motor speed at 100% speed (guess from aliexpress listing, this needs to be calculated)
 
 #define ENCODER_CPR        100       // counts per motor shaft rev (A or B channel edges before x4)
@@ -49,8 +49,8 @@
 #define CTRL_DT            (1.0f/CTRL_HZ)
 
 // PI gains (start conservative; tune on robot)
-#define KP                 1.5f
-#define KI                 12.0f
+#define KP                 0.2f
+#define KI                 3KL.0f
 #define KD                 0.0f       // optional; start at 0
 
 // PWM output limit (percent)
@@ -284,22 +284,22 @@ float counts_to_wheel_mps(int32_t delta_counts)
 	float wheel_rps  = wheel_revs / CTRL_DT;
 	float circumference = (float)M_PI * WHEEL_DIAMETER;
 
-	return wheel_rps * circumference;  // m/s
+	return -wheel_rps * circumference;  // m/s
 }
 
 // Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
 void Motor_SetSpeed_L(float v)
 {
-	uint16_t speed = 1500 - 250 * v;
-	if (speed > 1750) speed = 1750;
-	if (speed < 1250) speed = 1250;
+	uint16_t speed = 1500 - 60 * v;
+	if (speed > 1600) speed = 1750;
+	if (speed < 1400) speed = 1250;
 	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, speed);
 }
 void Motor_SetSpeed_R(float v)
 {
-	uint16_t speed =  1500 + 250 * v;
-	if (speed > 1750) speed = 1750;
-	if (speed < 1250) speed = 1250;
+	uint16_t speed =  1500 + 60 * v;
+	if (speed > 1600) speed = 1750;
+	if (speed < 1400) speed = 1250;
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, speed);
 }
 
@@ -349,10 +349,8 @@ void Control_Update(void)
 	float uL = KP * eL + i_term_L;
 	float uR = KP * eR + i_term_R;
 
-
-
-	Motor_SetSpeed_L(uL);
-	Motor_SetSpeed_R(uR);
+	Motor_SetSpeed_L(desired_speed_L + uL);
+	Motor_SetSpeed_R(desired_speed_R + uR);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -489,7 +487,6 @@ int main(void)
 		currentTime = HAL_GetTick();
 
 		if( (currentTime - prevUpdateTime) >= tick_period){
-
 			Control_Update();
 			prevUpdateTime = currentTime;
 		}
