@@ -7776,7 +7776,7 @@ void Motor_SetSpeed_L(float v)
  8003cb6:	b084      	sub	sp, #16
  8003cb8:	af00      	add	r7, sp, #0
  8003cba:	6078      	str	r0, [r7, #4]
-	uint16_t speed = 1500 - 60 * v;
+	uint16_t speed = 1500 - 70 * v;
  8003cbc:	4917      	ldr	r1, [pc, #92]	@ (8003d1c <Motor_SetSpeed_L+0x68>)
  8003cbe:	6878      	ldr	r0, [r7, #4]
  8003cc0:	f7fd f8ee 	bl	8000ea0 <__aeabi_fmul>
@@ -7826,7 +7826,7 @@ void Motor_SetSpeed_L(float v)
  8003d16:	b004      	add	sp, #16
  8003d18:	bdb0      	pop	{r4, r5, r7, pc}
  8003d1a:	46c0      	nop			@ (mov r8, r8)
- 8003d1c:	42700000 	.word	0x42700000
+ 8003d1c:	428c0000 	.word	0x428c0000
  8003d20:	44bb8000 	.word	0x44bb8000
  8003d24:	000006d6 	.word	0x000006d6
  8003d28:	000004e2 	.word	0x000004e2
@@ -7839,7 +7839,7 @@ void Motor_SetSpeed_R(float v)
  8003d32:	b084      	sub	sp, #16
  8003d34:	af00      	add	r7, sp, #0
  8003d36:	6078      	str	r0, [r7, #4]
-	uint16_t speed =  1500 + 60 * v;
+	uint16_t speed =  1500 + 70 * v;
  8003d38:	4917      	ldr	r1, [pc, #92]	@ (8003d98 <Motor_SetSpeed_R+0x68>)
  8003d3a:	6878      	ldr	r0, [r7, #4]
  8003d3c:	f7fd f8b0 	bl	8000ea0 <__aeabi_fmul>
@@ -7889,7 +7889,7 @@ void Motor_SetSpeed_R(float v)
  8003d92:	b004      	add	sp, #16
  8003d94:	bdb0      	pop	{r4, r5, r7, pc}
  8003d96:	46c0      	nop			@ (mov r8, r8)
- 8003d98:	42700000 	.word	0x42700000
+ 8003d98:	428c0000 	.word	0x428c0000
  8003d9c:	44bb8000 	.word	0x44bb8000
  8003da0:	000006d6 	.word	0x000006d6
  8003da4:	000004e2 	.word	0x000004e2
@@ -7989,16 +7989,16 @@ void Control_Update(void)
  8003e64:	af00      	add	r7, sp, #0
 	// 1) Measure wheel speeds from encoders
 	int32_t dL = encoder_delta_counts(&htim4, &enc_prev_L);
- 8003e66:	4a8b      	ldr	r2, [pc, #556]	@ (8004094 <Control_Update+0x234>)
- 8003e68:	4b8b      	ldr	r3, [pc, #556]	@ (8004098 <Control_Update+0x238>)
+ 8003e66:	4a8c      	ldr	r2, [pc, #560]	@ (8004098 <Control_Update+0x238>)
+ 8003e68:	4b8c      	ldr	r3, [pc, #560]	@ (800409c <Control_Update+0x23c>)
  8003e6a:	0011      	movs	r1, r2
  8003e6c:	0018      	movs	r0, r3
  8003e6e:	f7ff feb9 	bl	8003be4 <encoder_delta_counts>
  8003e72:	0003      	movs	r3, r0
  8003e74:	627b      	str	r3, [r7, #36]	@ 0x24
 	int32_t dR = -encoder_delta_counts(&htim3, &enc_prev_R);
- 8003e76:	4a89      	ldr	r2, [pc, #548]	@ (800409c <Control_Update+0x23c>)
- 8003e78:	4b89      	ldr	r3, [pc, #548]	@ (80040a0 <Control_Update+0x240>)
+ 8003e76:	4a8a      	ldr	r2, [pc, #552]	@ (80040a0 <Control_Update+0x240>)
+ 8003e78:	4b8a      	ldr	r3, [pc, #552]	@ (80040a4 <Control_Update+0x244>)
  8003e7a:	0011      	movs	r1, r2
  8003e7c:	0018      	movs	r0, r3
  8003e7e:	f7ff feb1 	bl	8003be4 <encoder_delta_counts>
@@ -8037,8 +8037,8 @@ void Control_Update(void)
  8003ec0:	1c03      	adds	r3, r0, #0
  8003ec2:	1c18      	adds	r0, r3, #0
  8003ec4:	f7ff fbd0 	bl	8003668 <__aeabi_f2d>
- 8003ec8:	4a76      	ldr	r2, [pc, #472]	@ (80040a4 <Control_Update+0x244>)
- 8003eca:	4b77      	ldr	r3, [pc, #476]	@ (80040a8 <Control_Update+0x248>)
+ 8003ec8:	4a77      	ldr	r2, [pc, #476]	@ (80040a8 <Control_Update+0x248>)
+ 8003eca:	4b78      	ldr	r3, [pc, #480]	@ (80040ac <Control_Update+0x24c>)
  8003ecc:	f7fd fff2 	bl	8001eb4 <__aeabi_ddiv>
  8003ed0:	0002      	movs	r2, r0
  8003ed2:	000b      	movs	r3, r1
@@ -8050,33 +8050,33 @@ void Control_Update(void)
 
 	// Integrate to update position and orientation
 	robot_Theta += w_robot * CTRL_DT;
- 8003ee0:	4972      	ldr	r1, [pc, #456]	@ (80040ac <Control_Update+0x24c>)
+ 8003ee0:	4973      	ldr	r1, [pc, #460]	@ (80040b0 <Control_Update+0x250>)
  8003ee2:	6938      	ldr	r0, [r7, #16]
  8003ee4:	f7fc ffdc 	bl	8000ea0 <__aeabi_fmul>
  8003ee8:	1c03      	adds	r3, r0, #0
  8003eea:	1c1a      	adds	r2, r3, #0
- 8003eec:	4b70      	ldr	r3, [pc, #448]	@ (80040b0 <Control_Update+0x250>)
+ 8003eec:	4b71      	ldr	r3, [pc, #452]	@ (80040b4 <Control_Update+0x254>)
  8003eee:	681b      	ldr	r3, [r3, #0]
  8003ef0:	1c19      	adds	r1, r3, #0
  8003ef2:	1c10      	adds	r0, r2, #0
  8003ef4:	f7fc fc14 	bl	8000720 <__aeabi_fadd>
  8003ef8:	1c03      	adds	r3, r0, #0
  8003efa:	1c1a      	adds	r2, r3, #0
- 8003efc:	4b6c      	ldr	r3, [pc, #432]	@ (80040b0 <Control_Update+0x250>)
+ 8003efc:	4b6d      	ldr	r3, [pc, #436]	@ (80040b4 <Control_Update+0x254>)
  8003efe:	601a      	str	r2, [r3, #0]
 	robot_Theta = fmodf(robot_Theta, 2.0f * (float)M_PI); // keep theta in [0, 2pi)
- 8003f00:	4b6b      	ldr	r3, [pc, #428]	@ (80040b0 <Control_Update+0x250>)
+ 8003f00:	4b6c      	ldr	r3, [pc, #432]	@ (80040b4 <Control_Update+0x254>)
  8003f02:	681b      	ldr	r3, [r3, #0]
- 8003f04:	4a6b      	ldr	r2, [pc, #428]	@ (80040b4 <Control_Update+0x254>)
+ 8003f04:	4a6c      	ldr	r2, [pc, #432]	@ (80040b8 <Control_Update+0x258>)
  8003f06:	1c11      	adds	r1, r2, #0
  8003f08:	1c18      	adds	r0, r3, #0
  8003f0a:	f009 fdad 	bl	800da68 <fmodf>
  8003f0e:	1c02      	adds	r2, r0, #0
- 8003f10:	4b67      	ldr	r3, [pc, #412]	@ (80040b0 <Control_Update+0x250>)
+ 8003f10:	4b68      	ldr	r3, [pc, #416]	@ (80040b4 <Control_Update+0x254>)
  8003f12:	601a      	str	r2, [r3, #0]
 
 	robot_X += v_robot * cosf(robot_Theta) * CTRL_DT;
- 8003f14:	4b66      	ldr	r3, [pc, #408]	@ (80040b0 <Control_Update+0x250>)
+ 8003f14:	4b67      	ldr	r3, [pc, #412]	@ (80040b4 <Control_Update+0x254>)
  8003f16:	681b      	ldr	r3, [r3, #0]
  8003f18:	1c18      	adds	r0, r3, #0
  8003f1a:	f009 fdc3 	bl	800daa4 <cosf>
@@ -8085,22 +8085,22 @@ void Control_Update(void)
  8003f22:	1c18      	adds	r0, r3, #0
  8003f24:	f7fc ffbc 	bl	8000ea0 <__aeabi_fmul>
  8003f28:	1c03      	adds	r3, r0, #0
- 8003f2a:	4960      	ldr	r1, [pc, #384]	@ (80040ac <Control_Update+0x24c>)
+ 8003f2a:	4961      	ldr	r1, [pc, #388]	@ (80040b0 <Control_Update+0x250>)
  8003f2c:	1c18      	adds	r0, r3, #0
  8003f2e:	f7fc ffb7 	bl	8000ea0 <__aeabi_fmul>
  8003f32:	1c03      	adds	r3, r0, #0
  8003f34:	1c1a      	adds	r2, r3, #0
- 8003f36:	4b60      	ldr	r3, [pc, #384]	@ (80040b8 <Control_Update+0x258>)
+ 8003f36:	4b61      	ldr	r3, [pc, #388]	@ (80040bc <Control_Update+0x25c>)
  8003f38:	681b      	ldr	r3, [r3, #0]
  8003f3a:	1c19      	adds	r1, r3, #0
  8003f3c:	1c10      	adds	r0, r2, #0
  8003f3e:	f7fc fbef 	bl	8000720 <__aeabi_fadd>
  8003f42:	1c03      	adds	r3, r0, #0
  8003f44:	1c1a      	adds	r2, r3, #0
- 8003f46:	4b5c      	ldr	r3, [pc, #368]	@ (80040b8 <Control_Update+0x258>)
+ 8003f46:	4b5d      	ldr	r3, [pc, #372]	@ (80040bc <Control_Update+0x25c>)
  8003f48:	601a      	str	r2, [r3, #0]
 	robot_Y += v_robot * sinf(robot_Theta) * CTRL_DT;
- 8003f4a:	4b59      	ldr	r3, [pc, #356]	@ (80040b0 <Control_Update+0x250>)
+ 8003f4a:	4b5a      	ldr	r3, [pc, #360]	@ (80040b4 <Control_Update+0x254>)
  8003f4c:	681b      	ldr	r3, [r3, #0]
  8003f4e:	1c18      	adds	r0, r3, #0
  8003f50:	f009 fddc 	bl	800db0c <sinf>
@@ -8109,33 +8109,33 @@ void Control_Update(void)
  8003f58:	1c18      	adds	r0, r3, #0
  8003f5a:	f7fc ffa1 	bl	8000ea0 <__aeabi_fmul>
  8003f5e:	1c03      	adds	r3, r0, #0
- 8003f60:	4952      	ldr	r1, [pc, #328]	@ (80040ac <Control_Update+0x24c>)
+ 8003f60:	4953      	ldr	r1, [pc, #332]	@ (80040b0 <Control_Update+0x250>)
  8003f62:	1c18      	adds	r0, r3, #0
  8003f64:	f7fc ff9c 	bl	8000ea0 <__aeabi_fmul>
  8003f68:	1c03      	adds	r3, r0, #0
  8003f6a:	1c1a      	adds	r2, r3, #0
- 8003f6c:	4b53      	ldr	r3, [pc, #332]	@ (80040bc <Control_Update+0x25c>)
+ 8003f6c:	4b54      	ldr	r3, [pc, #336]	@ (80040c0 <Control_Update+0x260>)
  8003f6e:	681b      	ldr	r3, [r3, #0]
  8003f70:	1c19      	adds	r1, r3, #0
  8003f72:	1c10      	adds	r0, r2, #0
  8003f74:	f7fc fbd4 	bl	8000720 <__aeabi_fadd>
  8003f78:	1c03      	adds	r3, r0, #0
  8003f7a:	1c1a      	adds	r2, r3, #0
- 8003f7c:	4b4f      	ldr	r3, [pc, #316]	@ (80040bc <Control_Update+0x25c>)
+ 8003f7c:	4b50      	ldr	r3, [pc, #320]	@ (80040c0 <Control_Update+0x260>)
  8003f7e:	601a      	str	r2, [r3, #0]
 
 	v = v_robot;
- 8003f80:	4b4f      	ldr	r3, [pc, #316]	@ (80040c0 <Control_Update+0x260>)
+ 8003f80:	4b50      	ldr	r3, [pc, #320]	@ (80040c4 <Control_Update+0x264>)
  8003f82:	697a      	ldr	r2, [r7, #20]
  8003f84:	601a      	str	r2, [r3, #0]
 	w = w_robot;
- 8003f86:	4b4f      	ldr	r3, [pc, #316]	@ (80040c4 <Control_Update+0x264>)
+ 8003f86:	4b50      	ldr	r3, [pc, #320]	@ (80040c8 <Control_Update+0x268>)
  8003f88:	693a      	ldr	r2, [r7, #16]
  8003f8a:	601a      	str	r2, [r3, #0]
 
 	// Errors (m/s)
 	float eL = desired_speed_L - vL_meas;
- 8003f8c:	4b4e      	ldr	r3, [pc, #312]	@ (80040c8 <Control_Update+0x268>)
+ 8003f8c:	4b4f      	ldr	r3, [pc, #316]	@ (80040cc <Control_Update+0x26c>)
  8003f8e:	681b      	ldr	r3, [r3, #0]
  8003f90:	69f9      	ldr	r1, [r7, #28]
  8003f92:	1c18      	adds	r0, r3, #0
@@ -8143,7 +8143,7 @@ void Control_Update(void)
  8003f98:	1c03      	adds	r3, r0, #0
  8003f9a:	60fb      	str	r3, [r7, #12]
 	float eR = desired_speed_R - vR_meas;
- 8003f9c:	4b4b      	ldr	r3, [pc, #300]	@ (80040cc <Control_Update+0x26c>)
+ 8003f9c:	4b4c      	ldr	r3, [pc, #304]	@ (80040d0 <Control_Update+0x270>)
  8003f9e:	681b      	ldr	r3, [r3, #0]
  8003fa0:	69b9      	ldr	r1, [r7, #24]
  8003fa2:	1c18      	adds	r0, r3, #0
@@ -8153,136 +8153,137 @@ void Control_Update(void)
 
     // PI control (same as before)
     i_term_L += KI * eL * CTRL_DT;
- 8003fac:	4948      	ldr	r1, [pc, #288]	@ (80040d0 <Control_Update+0x270>)
+ 8003fac:	4949      	ldr	r1, [pc, #292]	@ (80040d4 <Control_Update+0x274>)
  8003fae:	68f8      	ldr	r0, [r7, #12]
  8003fb0:	f7fc ff76 	bl	8000ea0 <__aeabi_fmul>
  8003fb4:	1c03      	adds	r3, r0, #0
- 8003fb6:	493d      	ldr	r1, [pc, #244]	@ (80040ac <Control_Update+0x24c>)
+ 8003fb6:	493e      	ldr	r1, [pc, #248]	@ (80040b0 <Control_Update+0x250>)
  8003fb8:	1c18      	adds	r0, r3, #0
  8003fba:	f7fc ff71 	bl	8000ea0 <__aeabi_fmul>
  8003fbe:	1c03      	adds	r3, r0, #0
  8003fc0:	1c1a      	adds	r2, r3, #0
- 8003fc2:	4b44      	ldr	r3, [pc, #272]	@ (80040d4 <Control_Update+0x274>)
+ 8003fc2:	4b45      	ldr	r3, [pc, #276]	@ (80040d8 <Control_Update+0x278>)
  8003fc4:	681b      	ldr	r3, [r3, #0]
  8003fc6:	1c19      	adds	r1, r3, #0
  8003fc8:	1c10      	adds	r0, r2, #0
  8003fca:	f7fc fba9 	bl	8000720 <__aeabi_fadd>
  8003fce:	1c03      	adds	r3, r0, #0
  8003fd0:	1c1a      	adds	r2, r3, #0
- 8003fd2:	4b40      	ldr	r3, [pc, #256]	@ (80040d4 <Control_Update+0x274>)
+ 8003fd2:	4b41      	ldr	r3, [pc, #260]	@ (80040d8 <Control_Update+0x278>)
  8003fd4:	601a      	str	r2, [r3, #0]
     i_term_R += KI * eR * CTRL_DT;
- 8003fd6:	493e      	ldr	r1, [pc, #248]	@ (80040d0 <Control_Update+0x270>)
+ 8003fd6:	493f      	ldr	r1, [pc, #252]	@ (80040d4 <Control_Update+0x274>)
  8003fd8:	68b8      	ldr	r0, [r7, #8]
  8003fda:	f7fc ff61 	bl	8000ea0 <__aeabi_fmul>
  8003fde:	1c03      	adds	r3, r0, #0
- 8003fe0:	4932      	ldr	r1, [pc, #200]	@ (80040ac <Control_Update+0x24c>)
+ 8003fe0:	4933      	ldr	r1, [pc, #204]	@ (80040b0 <Control_Update+0x250>)
  8003fe2:	1c18      	adds	r0, r3, #0
  8003fe4:	f7fc ff5c 	bl	8000ea0 <__aeabi_fmul>
  8003fe8:	1c03      	adds	r3, r0, #0
  8003fea:	1c1a      	adds	r2, r3, #0
- 8003fec:	4b3a      	ldr	r3, [pc, #232]	@ (80040d8 <Control_Update+0x278>)
+ 8003fec:	4b3b      	ldr	r3, [pc, #236]	@ (80040dc <Control_Update+0x27c>)
  8003fee:	681b      	ldr	r3, [r3, #0]
  8003ff0:	1c19      	adds	r1, r3, #0
  8003ff2:	1c10      	adds	r0, r2, #0
  8003ff4:	f7fc fb94 	bl	8000720 <__aeabi_fadd>
  8003ff8:	1c03      	adds	r3, r0, #0
  8003ffa:	1c1a      	adds	r2, r3, #0
- 8003ffc:	4b36      	ldr	r3, [pc, #216]	@ (80040d8 <Control_Update+0x278>)
+ 8003ffc:	4b37      	ldr	r3, [pc, #220]	@ (80040dc <Control_Update+0x27c>)
  8003ffe:	601a      	str	r2, [r3, #0]
-    i_term_L = clampf(i_term_L, -1.0f, 1.0f);
- 8004000:	4b34      	ldr	r3, [pc, #208]	@ (80040d4 <Control_Update+0x274>)
+    i_term_L = clampf(i_term_L, -0.5f, 0.5f);
+ 8004000:	4b35      	ldr	r3, [pc, #212]	@ (80040d8 <Control_Update+0x278>)
  8004002:	681b      	ldr	r3, [r3, #0]
- 8004004:	22fe      	movs	r2, #254	@ 0xfe
+ 8004004:	22fc      	movs	r2, #252	@ 0xfc
  8004006:	0592      	lsls	r2, r2, #22
- 8004008:	4934      	ldr	r1, [pc, #208]	@ (80040dc <Control_Update+0x27c>)
- 800400a:	1c18      	adds	r0, r3, #0
- 800400c:	f7ff fc20 	bl	8003850 <clampf>
- 8004010:	1c02      	adds	r2, r0, #0
- 8004012:	4b30      	ldr	r3, [pc, #192]	@ (80040d4 <Control_Update+0x274>)
- 8004014:	601a      	str	r2, [r3, #0]
-    i_term_R = clampf(i_term_R, -1.0f, 1.0f);
- 8004016:	4b30      	ldr	r3, [pc, #192]	@ (80040d8 <Control_Update+0x278>)
- 8004018:	681b      	ldr	r3, [r3, #0]
- 800401a:	22fe      	movs	r2, #254	@ 0xfe
- 800401c:	0592      	lsls	r2, r2, #22
- 800401e:	492f      	ldr	r1, [pc, #188]	@ (80040dc <Control_Update+0x27c>)
- 8004020:	1c18      	adds	r0, r3, #0
- 8004022:	f7ff fc15 	bl	8003850 <clampf>
- 8004026:	1c02      	adds	r2, r0, #0
- 8004028:	4b2b      	ldr	r3, [pc, #172]	@ (80040d8 <Control_Update+0x278>)
- 800402a:	601a      	str	r2, [r3, #0]
+ 8004008:	21bf      	movs	r1, #191	@ 0xbf
+ 800400a:	0609      	lsls	r1, r1, #24
+ 800400c:	1c18      	adds	r0, r3, #0
+ 800400e:	f7ff fc1f 	bl	8003850 <clampf>
+ 8004012:	1c02      	adds	r2, r0, #0
+ 8004014:	4b30      	ldr	r3, [pc, #192]	@ (80040d8 <Control_Update+0x278>)
+ 8004016:	601a      	str	r2, [r3, #0]
+    i_term_R = clampf(i_term_R, -0.5f, 0.5f);
+ 8004018:	4b30      	ldr	r3, [pc, #192]	@ (80040dc <Control_Update+0x27c>)
+ 800401a:	681b      	ldr	r3, [r3, #0]
+ 800401c:	22fc      	movs	r2, #252	@ 0xfc
+ 800401e:	0592      	lsls	r2, r2, #22
+ 8004020:	21bf      	movs	r1, #191	@ 0xbf
+ 8004022:	0609      	lsls	r1, r1, #24
+ 8004024:	1c18      	adds	r0, r3, #0
+ 8004026:	f7ff fc13 	bl	8003850 <clampf>
+ 800402a:	1c02      	adds	r2, r0, #0
+ 800402c:	4b2b      	ldr	r3, [pc, #172]	@ (80040dc <Control_Update+0x27c>)
+ 800402e:	601a      	str	r2, [r3, #0]
 
 
 	float uL = KP * eL + i_term_L;
- 800402c:	492c      	ldr	r1, [pc, #176]	@ (80040e0 <Control_Update+0x280>)
- 800402e:	68f8      	ldr	r0, [r7, #12]
- 8004030:	f7fc ff36 	bl	8000ea0 <__aeabi_fmul>
- 8004034:	1c03      	adds	r3, r0, #0
- 8004036:	1c1a      	adds	r2, r3, #0
- 8004038:	4b26      	ldr	r3, [pc, #152]	@ (80040d4 <Control_Update+0x274>)
- 800403a:	681b      	ldr	r3, [r3, #0]
- 800403c:	1c19      	adds	r1, r3, #0
- 800403e:	1c10      	adds	r0, r2, #0
- 8004040:	f7fc fb6e 	bl	8000720 <__aeabi_fadd>
- 8004044:	1c03      	adds	r3, r0, #0
- 8004046:	607b      	str	r3, [r7, #4]
+ 8004030:	492b      	ldr	r1, [pc, #172]	@ (80040e0 <Control_Update+0x280>)
+ 8004032:	68f8      	ldr	r0, [r7, #12]
+ 8004034:	f7fc ff34 	bl	8000ea0 <__aeabi_fmul>
+ 8004038:	1c03      	adds	r3, r0, #0
+ 800403a:	1c1a      	adds	r2, r3, #0
+ 800403c:	4b26      	ldr	r3, [pc, #152]	@ (80040d8 <Control_Update+0x278>)
+ 800403e:	681b      	ldr	r3, [r3, #0]
+ 8004040:	1c19      	adds	r1, r3, #0
+ 8004042:	1c10      	adds	r0, r2, #0
+ 8004044:	f7fc fb6c 	bl	8000720 <__aeabi_fadd>
+ 8004048:	1c03      	adds	r3, r0, #0
+ 800404a:	607b      	str	r3, [r7, #4]
 	float uR = KP * eR + i_term_R;
- 8004048:	4925      	ldr	r1, [pc, #148]	@ (80040e0 <Control_Update+0x280>)
- 800404a:	68b8      	ldr	r0, [r7, #8]
- 800404c:	f7fc ff28 	bl	8000ea0 <__aeabi_fmul>
- 8004050:	1c03      	adds	r3, r0, #0
- 8004052:	1c1a      	adds	r2, r3, #0
- 8004054:	4b20      	ldr	r3, [pc, #128]	@ (80040d8 <Control_Update+0x278>)
- 8004056:	681b      	ldr	r3, [r3, #0]
- 8004058:	1c19      	adds	r1, r3, #0
- 800405a:	1c10      	adds	r0, r2, #0
- 800405c:	f7fc fb60 	bl	8000720 <__aeabi_fadd>
- 8004060:	1c03      	adds	r3, r0, #0
- 8004062:	603b      	str	r3, [r7, #0]
+ 800404c:	4924      	ldr	r1, [pc, #144]	@ (80040e0 <Control_Update+0x280>)
+ 800404e:	68b8      	ldr	r0, [r7, #8]
+ 8004050:	f7fc ff26 	bl	8000ea0 <__aeabi_fmul>
+ 8004054:	1c03      	adds	r3, r0, #0
+ 8004056:	1c1a      	adds	r2, r3, #0
+ 8004058:	4b20      	ldr	r3, [pc, #128]	@ (80040dc <Control_Update+0x27c>)
+ 800405a:	681b      	ldr	r3, [r3, #0]
+ 800405c:	1c19      	adds	r1, r3, #0
+ 800405e:	1c10      	adds	r0, r2, #0
+ 8004060:	f7fc fb5e 	bl	8000720 <__aeabi_fadd>
+ 8004064:	1c03      	adds	r3, r0, #0
+ 8004066:	603b      	str	r3, [r7, #0]
 
 	Motor_SetSpeed_L(desired_speed_L + uL);
- 8004064:	4b18      	ldr	r3, [pc, #96]	@ (80040c8 <Control_Update+0x268>)
- 8004066:	681b      	ldr	r3, [r3, #0]
- 8004068:	6879      	ldr	r1, [r7, #4]
- 800406a:	1c18      	adds	r0, r3, #0
- 800406c:	f7fc fb58 	bl	8000720 <__aeabi_fadd>
- 8004070:	1c03      	adds	r3, r0, #0
- 8004072:	1c18      	adds	r0, r3, #0
- 8004074:	f7ff fe1e 	bl	8003cb4 <Motor_SetSpeed_L>
+ 8004068:	4b18      	ldr	r3, [pc, #96]	@ (80040cc <Control_Update+0x26c>)
+ 800406a:	681b      	ldr	r3, [r3, #0]
+ 800406c:	6879      	ldr	r1, [r7, #4]
+ 800406e:	1c18      	adds	r0, r3, #0
+ 8004070:	f7fc fb56 	bl	8000720 <__aeabi_fadd>
+ 8004074:	1c03      	adds	r3, r0, #0
+ 8004076:	1c18      	adds	r0, r3, #0
+ 8004078:	f7ff fe1c 	bl	8003cb4 <Motor_SetSpeed_L>
 	Motor_SetSpeed_R(desired_speed_R + uR);
- 8004078:	4b14      	ldr	r3, [pc, #80]	@ (80040cc <Control_Update+0x26c>)
- 800407a:	681b      	ldr	r3, [r3, #0]
- 800407c:	6839      	ldr	r1, [r7, #0]
- 800407e:	1c18      	adds	r0, r3, #0
- 8004080:	f7fc fb4e 	bl	8000720 <__aeabi_fadd>
- 8004084:	1c03      	adds	r3, r0, #0
- 8004086:	1c18      	adds	r0, r3, #0
- 8004088:	f7ff fe52 	bl	8003d30 <Motor_SetSpeed_R>
+ 800407c:	4b14      	ldr	r3, [pc, #80]	@ (80040d0 <Control_Update+0x270>)
+ 800407e:	681b      	ldr	r3, [r3, #0]
+ 8004080:	6839      	ldr	r1, [r7, #0]
+ 8004082:	1c18      	adds	r0, r3, #0
+ 8004084:	f7fc fb4c 	bl	8000720 <__aeabi_fadd>
+ 8004088:	1c03      	adds	r3, r0, #0
+ 800408a:	1c18      	adds	r0, r3, #0
+ 800408c:	f7ff fe50 	bl	8003d30 <Motor_SetSpeed_R>
 }
- 800408c:	46c0      	nop			@ (mov r8, r8)
- 800408e:	46bd      	mov	sp, r7
- 8004090:	b00a      	add	sp, #40	@ 0x28
- 8004092:	bd80      	pop	{r7, pc}
- 8004094:	20000410 	.word	0x20000410
- 8004098:	20000328 	.word	0x20000328
- 800409c:	20000414 	.word	0x20000414
- 80040a0:	200002dc 	.word	0x200002dc
- 80040a4:	d4fdf3b6 	.word	0xd4fdf3b6
- 80040a8:	3fdee978 	.word	0x3fdee978
- 80040ac:	3c23d70a 	.word	0x3c23d70a
- 80040b0:	20000420 	.word	0x20000420
- 80040b4:	40c90fdb 	.word	0x40c90fdb
- 80040b8:	20000418 	.word	0x20000418
- 80040bc:	2000041c 	.word	0x2000041c
- 80040c0:	20000438 	.word	0x20000438
- 80040c4:	2000043c 	.word	0x2000043c
- 80040c8:	20000408 	.word	0x20000408
- 80040cc:	2000040c 	.word	0x2000040c
- 80040d0:	40400000 	.word	0x40400000
- 80040d4:	20000424 	.word	0x20000424
- 80040d8:	20000428 	.word	0x20000428
- 80040dc:	bf800000 	.word	0xbf800000
+ 8004090:	46c0      	nop			@ (mov r8, r8)
+ 8004092:	46bd      	mov	sp, r7
+ 8004094:	b00a      	add	sp, #40	@ 0x28
+ 8004096:	bd80      	pop	{r7, pc}
+ 8004098:	20000410 	.word	0x20000410
+ 800409c:	20000328 	.word	0x20000328
+ 80040a0:	20000414 	.word	0x20000414
+ 80040a4:	200002dc 	.word	0x200002dc
+ 80040a8:	d4fdf3b6 	.word	0xd4fdf3b6
+ 80040ac:	3fdee978 	.word	0x3fdee978
+ 80040b0:	3c23d70a 	.word	0x3c23d70a
+ 80040b4:	20000420 	.word	0x20000420
+ 80040b8:	40c90fdb 	.word	0x40c90fdb
+ 80040bc:	20000418 	.word	0x20000418
+ 80040c0:	2000041c 	.word	0x2000041c
+ 80040c4:	20000438 	.word	0x20000438
+ 80040c8:	2000043c 	.word	0x2000043c
+ 80040cc:	20000408 	.word	0x20000408
+ 80040d0:	2000040c 	.word	0x2000040c
+ 80040d4:	40a00000 	.word	0x40a00000
+ 80040d8:	20000424 	.word	0x20000424
+ 80040dc:	20000428 	.word	0x20000428
  80040e0:	3e4ccccd 	.word	0x3e4ccccd
 
 080040e4 <HAL_UART_RxCpltCallback>:

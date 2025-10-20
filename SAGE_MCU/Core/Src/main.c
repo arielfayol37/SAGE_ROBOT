@@ -50,7 +50,7 @@
 
 // PI gains (start conservative; tune on robot)
 #define KP                 0.2f
-#define KI                 3KL.0f
+#define KI                 5.0f
 #define KD                 0.0f       // optional; start at 0
 
 // PWM output limit (percent)
@@ -290,14 +290,14 @@ float counts_to_wheel_mps(int32_t delta_counts)
 // Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
 void Motor_SetSpeed_L(float v)
 {
-	uint16_t speed = 1500 - 60 * v;
+	uint16_t speed = 1500 - 70 * v;
 	if (speed > 1600) speed = 1750;
 	if (speed < 1400) speed = 1250;
 	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, speed);
 }
 void Motor_SetSpeed_R(float v)
 {
-	uint16_t speed =  1500 + 60 * v;
+	uint16_t speed =  1500 + 70 * v;
 	if (speed > 1600) speed = 1750;
 	if (speed < 1400) speed = 1250;
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, speed);
@@ -342,8 +342,8 @@ void Control_Update(void)
     // PI control (same as before)
     i_term_L += KI * eL * CTRL_DT;
     i_term_R += KI * eR * CTRL_DT;
-    i_term_L = clampf(i_term_L, -1.0f, 1.0f);
-    i_term_R = clampf(i_term_R, -1.0f, 1.0f);
+    i_term_L = clampf(i_term_L, -0.5f, 0.5f);
+    i_term_R = clampf(i_term_R, -0.5f, 0.5f);
 
 
 	float uL = KP * eL + i_term_L;
