@@ -1,97 +1,107 @@
-# Robot Tour AI Backend
+# SAGE — Autonomous Campus Tour Robot
 
-A real-time AI-controlled robot system using WebSockets for voice AI-guided tours of **Valparaiso University's College of Engineering**.
+**Senior Design Project (Valparaiso University)**  
+**ROS 2 Humble · Jetson Orin Nano · STM32 · RPLIDAR A1M8 · WebRTC · Python**
 
-## Features
+SAGE is a Jetson-powered mobile robot designed to autonomously navigate indoor environments, stream live video to a browser, and respond naturally to voice commands.  
+Built on **ROS 2 Humble**, the system combines **SLAM**, **navigation**, **real-time teleoperation**, and **voice interaction** into a single integrated stack.
 
-- **3D Robot Simulation**: Three.js-based frontend with realistic robot movement and pathfinding
-- **Voice AI Integration**: Natural language tour guide using OpenAI GPT-4o
-- **Real-time Communication**: WebSocket-based communication between frontend and AI backend
-- **Intelligent Pathfinding**: A\* algorithm for optimal route planning
-- **Destination Queue Management**: Sequential processing of tour destinations
-- **Dynamic Status Updates**: Real-time robot position and status monitoring
+---
 
-## Voice AI Tour System
+## 🚀 Features
 
-The system uses a voice-based AI (`llm.py`) that can:
+- **Autonomous Navigation & Mapping**  
+  Uses SLAM Toolbox and Nav2 for indoor path planning and localization, powered by a precise URDF/TF/EKF pipeline.
 
-- **Understand natural language requests** for tours and specific destinations
-- **Provide detailed information** about engineering facilities (GEMC, Fites, SERF, iHub, Hesse)
-- **Guide visitors** to other campus locations with basic information
-- **Control robot movement** through tool calls to update/cancel routes
-- **Dynamically inject robot status** into system prompts for context-aware responses
+- **WebRTC Teleoperation & Diagnostics**  
+  Browser interface for operators and guides with live video, joystick/keyboard control, and system feedback.
 
-### Communication Flow
+- **Voice Interaction (LLM + Realtime STT/TTS)**  
+  Enables conversational commands with ~2 s average latency using OpenAI’s LLM streaming APIs.
 
-1. **User speaks** to the AI tour guide
-2. **AI processes** the request and determines destinations
-3. **AI sends route updates** to the FastAPI backend via tool calls
-4. **Backend communicates** with the frontend robot simulation via WebSocket
-5. **Robot executes** the tour route in the 3D environment
-6. **Robot reports** arrival at destinations back to the backend
-7. **AI receives** updated status for next interaction
+- **STM32 ↔ Jetson Bridge (Integrated in web_teleop_bridge)**  
+  High-frequency serial link (~200 Hz) for differential-drive control, odometry feedback, and system state exchange.
 
-### Message Types
+- **Modular Launch & Automation**  
+  `tmux`-based shell scripts simplify bring-up for different robot configurations (with/without IMU, SLAM, or voice).
 
-- `route_update`: AI sends new destinations to the robot
-- `route_cancel`: AI cancels specific or all destinations
-- `robot_status`: Frontend reports current robot position and status
-- `robot_arrival`: Frontend notifies when destination is reached
-- `heartbeat`: Connection health monitoring
+---
 
-## Architecture
+## 🧠 System Architecture
 
-- **Frontend**: Three.js robot simulation (Port 8001)
-- **Backend**: FastAPI WebSocket server (Port 8002)
-- **AI**: Voice-based tour guide with OpenAI integration
-- **Communication**: Bidirectional WebSocket for real-time updates
+**Jetson Orin Nano (ROS 2 Humble)**  
+→ **Sensors**: RPLIDAR A1M8, wheel encoders, IMU  
+→ **Perception / State**: SLAM Toolbox + EKF + TF/URDF  
+→ **Planning / Control**: Nav2 navigation stack  
+→ **Communication**: STM32 (serial) + WebRTC (teleop + video)  
+→ **Interfaces**: Browser UI, Realtime STT/TTS + LLM  
+→ **Operations**: `tmux` launch scripts · diagnostics · logging
 
-## Example Voice Commands
+---
 
-- "Take me on a tour of the engineering facilities"
-- "Show me the solar furnace at SERF"
-- "Let's visit the Innovation Hub makerspace"
-- "Cancel the current route"
-- "What engineering labs are available in the Fites building?"
+## 📁 Repository Structure
 
-## Future: Engineering School Environment
-
-The system is designed to be easily adaptable for different engineering school environments by updating the facility descriptions and room layouts in the building generator and AI system prompt.
-
-# Some Commands
-Launch speech and teleop nodes
-
-```
-cd ~/Desktop/SAGE_ROBOT
-./start_robot.sh
-```
-
-Launch lidar, robot_state_publisher, and nav2
-```
-ros2 launch sllidar_ros2 view_sllidar_a1_launch.py
-
-ros2 launch sllidar_ros2 sllidar_a1_launch.py frame_id:=lidar_link
-
-ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$(xacro ~/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)"
-ros2 launch slam_toolbox online_async_launch.py
-ros2 launch nav2_bringup navigation_launch.py \
-  params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml \
-  use_sim_time:=false
-
-ros2 run robot_localization ekf_node --ros-args --params-file ~/Desktop/SAGE_ROBOT/config/ekf.yaml
-```
-
-```
-ls -l /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
-```
-
-```
-agi@SAGE:~$ ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$(xacro ~/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)"
+SAGE_ROBOT/
+├─ config/ # Nav2, EKF, and related ROS 2 parameters
+├─ description/ # URDF/Xacro models and transforms
+├─ maps/ # Saved maps (SLAM outputs)
+├─ ros2_ws/
+│ └─ src/
+│ └─ web_teleop_bridge/ # WebRTC bridge + serial communication node (Jetson ↔ STM32)
+├─ signaling/ # Signaling server for WebRTC
+├─ speech/ # Realtime STT/TTS + LLM voice interface
+├─ start_robot.sh # Bring-up script (speech + teleop nodes)
+├─ slam_robot.sh # Bring-up with SLAM + Nav2
+├─ start_robot_without_imu.sh # Alternate launch script
+├─ slam_robot_without_imu.sh # Alternate SLAM setup without IMU
+└─ README.md
 
 
-agi@SAGE:~/Desktop/SAGE_ROBOT/ros2_ws$ source install/local_setup.bash
-agi@SAGE:~/Desktop/SAGE_ROBOT/ros2_ws$ ros2 launch sllidar_ros2 sllidar_a1_launch.py frame_id:=lidar_link
+---
 
-agi@SAGE:~$ ros2 launch slam_toolbox online_async_launch.py
+## ⚙️ Quick Overview
 
-```
+- **Hardware:** Jetson Orin Nano, STM32 motor controller, RPLIDAR A1M8, encoders / IMU  
+- **Software:** ROS 2 Humble · Python · WebRTC · OpenAI Realtime API  
+- **Bring-Up:** Use provided shell scripts to start common configurations (SLAM / Navigation / Voice).  
+  Full installation and setup guide will be added later.
+
+---
+
+## 🎙️ Voice & Teleoperation
+
+- **Voice Interface:**  
+  Realtime STT/TTS + OpenAI LLM streaming for conversational control; average latency ≈ 2 seconds.
+
+- **WebRTC Teleop:**  
+  Role-based browser interface with live video feed, keyboard/joystick input, and feedback from the STM32 bridge.  
+  Includes signaling server (`signaling/`) and ROS 2 bridge node (`web_teleop_bridge/`).
+
+---
+
+## 🧩 Roadmap
+
+- Add detailed **installation & build** instructions (Jetson setup, dependencies, `colcon` build, etc.)  
+- Publish **maps**, **URDF diagrams**, and **Nav2 configurations**  
+- Expand **voice command set** and optimize latency  
+- Document **STM32 firmware** protocol and diagnostics  
+
+---
+
+## 📜 License
+
+This project is released under the **MIT License**.  
+See [`LICENSE`](LICENSE) for more information.
+
+---
+
+## 🙌 Acknowledgments
+
+- Valparaiso University College of Engineering — Facilities and support  
+- ROS 2, Nav2, and SLAM Toolbox open-source communities  
+- Collaborators and testers involved in integration and demos  
+
+---
+
+*Developed as part of Valparaiso University’s Senior Design Program.*  
+[Demo](https://www.youtube.com/watch?v=HRWUCX_4h8A&list=PLIcrH01m1D4cKdDTaD45W4qkC3aI_CjJB&index=1)] 
