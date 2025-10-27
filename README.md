@@ -43,6 +43,7 @@ Built on **ROS 2 Humble**, the system combines **SLAM**, **navigation**, **real-
 
 ## 📁 Repository Structure
 
+```
 SAGE_ROBOT/
 ├─ config/ # Nav2, EKF, and related ROS 2 parameters
 ├─ description/ # URDF/Xacro models and transforms
@@ -57,6 +58,7 @@ SAGE_ROBOT/
 ├─ start_robot_without_imu.sh # Alternate launch script
 ├─ slam_robot_without_imu.sh # Alternate SLAM setup without IMU
 └─ README.md
+```
 
 
 ---
