@@ -1,5 +1,7 @@
 # SAGE — Autonomous Campus Tour Robot
 
+[Demo](https://www.youtube.com/watch?v=HRWUCX_4h8A&list=PLIcrH01m1D4cKdDTaD45W4qkC3aI_CjJB&index=1) 
+
 **Senior Design Project (Valparaiso University)**  
 **ROS 2 Humble · Jetson Orin Nano · STM32 · RPLIDAR A1M8 · WebRTC · Python**
 
@@ -104,4 +106,4 @@ See [`LICENSE`](LICENSE) for more information.
 ---
 
 *Developed as part of Valparaiso University’s Senior Design Program.*  
-[Demo](https://www.youtube.com/watch?v=HRWUCX_4h8A&list=PLIcrH01m1D4cKdDTaD45W4qkC3aI_CjJB&index=1)] 
+[Demo](https://www.youtube.com/watch?v=HRWUCX_4h8A&list=PLIcrH01m1D4cKdDTaD45W4qkC3aI_CjJB&index=1) 
