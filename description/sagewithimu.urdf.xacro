@@ -1,21 +1,21 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="sage">
   <!-- === Dimensions === -->
-  <xacro:property name="base_width" value="0.3691"/>
-  <xacro:property name="base_length" value="0.4083"/>
+  <xacro:property name="base_width" value="0.4083"/>
+  <xacro:property name="base_length" value="0.3691"/>
   <xacro:property name="base_thickness" value="0.02"/>
 
   <xacro:property name="wheel_radius" value="0.0505"/>
   <xacro:property name="front_wheel_radius" value="0.0415"/>
   <xacro:property name="wheel_thickness" value="0.0254"/>
-  <xacro:property name="wheel_x_from_back" value="0.0658"/>
+  <xacro:property name="wheel_x_from_back" value="0.0794"/>
   <xacro:property name="front_wheel_x_from_front" value="0.04572"/>
   <xacro:property name="lidar_height" value="0.2124"/>
 
   <xacro:property name="base_z" value="0.08731"/>
   <xacro:property name="half_len" value="${base_length/2.0}"/>
   <xacro:property name="half_wid" value="${base_width/2.0}"/>
-  <xacro:property name="track_width" value="0.4953"/>
+  <xacro:property name="track_width" value="0.484"/>
   <xacro:property name="half_track" value="${track_width / 2.0}"/>
   <xacro:property name="rear_wheel_x" value="${-half_len + wheel_x_from_back}"/>
 
