@@ -14,6 +14,7 @@ import threading
 import time
 import math
 import serial
+import glob
 
 import rclpy
 from rclpy.node import Node
@@ -63,7 +64,7 @@ class SerialBridge(Node):
         self.declare_parameter('cov_floor_gyro', 1e-6)
         self.declare_parameter('cov_floor_accel', 1e-5)
 
-        port  = self.get_parameter('port').value
+        port = next(iter(glob.glob('/dev/ttyACM*')), '/dev/ttyACM0')
         baud  = int(self.get_parameter('baud').value)
         self.cmd_topic  = self.get_parameter('cmd_topic').value
         self.odom_topic = self.get_parameter('odom_topic').value

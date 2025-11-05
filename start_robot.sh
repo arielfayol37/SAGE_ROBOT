@@ -53,8 +53,7 @@ tmux new-window -t "$SESSION" -n "Static Files" "bash -lc '
 # 3) Signaling server (venv)
 tmux new-window -t "$SESSION" -n "Signaling" "bash -lc '
   cd $HOME/Desktop/SAGE_ROBOT/signaling
-  source .signaling_venv/bin/activate
-  python signaling_server.py || { echo signaling_server failed; sleep 5; }
+  \$HOME/Desktop/SAGE_ROBOT/.venv/bin/python signaling_server.py || { echo signaling_server failed; sleep 5; }
   exec bash
 '"
 
@@ -103,12 +102,12 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
 
 # Speech
 tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT 
-  source .venv/bin/activate 
-  cd speech 
-  python llm_streaming.py || { echo speech failed; sleep 5; }
+  cd \$HOME/Desktop/SAGE_ROBOT/speech
+  \$HOME/Desktop/SAGE_ROBOT/.venv/bin/python llm_streaming.py \
+    || { echo speech failed; sleep 5; }
   exec bash
 '"
+
 
 # 8) Map Publisher (plus localization)
 tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
