@@ -565,7 +565,7 @@ if __name__ == "__main__":
     if USE_WAKEWORD:
         recorder_kwargs.update(
             wakeword_backend=["pvporcupine", "openwakeword"][1],
-            openwakeword_model_paths="assets/models/wakeword/sage_wakeword_2.onnx",
+            openwakeword_model_paths="assets/models/wakeword/sage_wakeword_2.onnx, assets/models/wakeword/hey_sage_2.onnx",
             openwakeword_inference_framework="onnx",
             wake_words_sensitivity=0.5,      # try 0.7–0.85 in a school
             wake_word_buffer_duration=0.3,  # 0.75-1s to keep "sage" out of transcript
