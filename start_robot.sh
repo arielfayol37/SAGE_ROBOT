@@ -43,25 +43,25 @@ tmux new-window -t "$SESSION" -n "Video Server" "bash -lc '
   exec bash
 '"
 
-# 2) Static Files on :8001 
-tmux new-window -t "$SESSION" -n "Static Files" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT/signaling/static
-  /usr/bin/python3 -m http.server 8001 || { echo http.server failed; sleep 5; }
-  exec bash
-'"
-
-# 3) Signaling server (venv)
-tmux new-window -t "$SESSION" -n "Signaling" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT/signaling
-  \$HOME/Desktop/SAGE_ROBOT/.venv/bin/python signaling_server.py || { echo signaling_server failed; sleep 5; }
-  exec bash
-'"
-
-# 4) Teleop Bridge
-tmux new-window -t "$SESSION" -n "Teleop Bridge" "bash -lc '
+# 4) Web Bridge
+tmux new-window -t "$SESSION" -n "Web Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   ros2 run web_teleop_bridge control_bridge || { echo control_bridge failed; sleep 5; }
+  exec bash
+'"
+
+# 2) Teleop Inteface :8001 
+tmux new-window -t "$SESSION" -n "Teleop Web" "bash -lc '
+  cd $HOME/Desktop/SAGE_ROBOT/interface/teleop_interface
+  /usr/bin/python3 -m http.server 8001 || { echo teleop interface failed; sleep 5; }
+  exec bash
+'"
+
+# 3) Status Interface: 8080
+tmux new-window -t "$SESSION" -n "Status Web" "bash -lc '
+  cd $HOME/Desktop/SAGE_ROBOT/interface/status_interface
+  npx vite || { echo status interface failed; sleep 5; }
   exec bash
 '"
 
@@ -69,7 +69,7 @@ tmux new-window -t "$SESSION" -n "Teleop Bridge" "bash -lc '
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  ros2 run web_teleop_bridge serial_bridge_with_imu || { echo serial_bridge failed; sleep 5; }
+  ros2 run web_teleop_bridge serial_bridge || { echo serial_bridge failed; sleep 5; }
   exec bash
 '"
 
