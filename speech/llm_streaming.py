@@ -10,123 +10,16 @@ import traceback
 import subprocess
 import torch
 
-# Use your utils if available
-try:
-    from utils import read_openai_key, json  # your helpers
-except Exception:
-    import json as json
-    def read_openai_key(_):
-        key = os.getenv("OPENAI_API_KEY")
-        if not key:
-            raise RuntimeError("OPENAI_API_KEY not set and utils.read_openai_key unavailable.")
-        return key
-
 from RealtimeSTT import AudioToTextRecorder
 from piper_tts import PiperTTS
-# ---- Nav2 async bridge (non-blocking) ----
 import threading, rclpy
-from rclpy.action import ActionClient
-from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from nav2_msgs.action import NavigateToPose
-from geometry_msgs.msg import PoseStamped
-from action_msgs.msg import GoalStatus
+from nav2async import Nav2AsyncBridge
 from waypoints import WAYPOINTS
+from utils import read_openai_key, json 
+from ui_state_client import UIStatePublisher
 
-class Nav2AsyncBridge(Node):
-    def __init__(self):
-        super().__init__('nav2_llm_bridge_async')
-        self.client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
-        self.goal_handle = None
-        self.status = "idle"          # idle | navigating | arrived | failed | cancelling
-        self.current_target = None
-        self.last_feedback = {}
-
-    def set_goal(self, *, frame_id, x, y, ox, oy, oz, ow, location_name):
-        self.current_target = location_name
-        self.status = "navigating"
-
-        # Preempt old goal if any
-        if self.goal_handle:
-            try:
-                self.goal_handle.cancel_goal_async()
-            except Exception:
-                pass
-
-        if not self.client.wait_for_server(timeout_sec=0.5):
-            self.status = "failed"
-            return "Nav2 action server not available."
-
-        pose = PoseStamped()
-        pose.header.frame_id = frame_id or 'map'
-        pose.header.stamp = self.get_clock().now().to_msg()
-        pose.pose.position.x = float(x)
-        pose.pose.position.y = float(y)
-        pose.pose.orientation.x = float(ox)
-        pose.pose.orientation.y = float(oy)
-        pose.pose.orientation.z = float(oz)
-        pose.pose.orientation.w = float(ow)
-
-        goal = NavigateToPose.Goal()
-        goal.pose = pose
-
-        def _feedback_cb(fb):
-            try:
-                f = fb.feedback
-                # available: current_pose, navigation_time, number_of_recoveries, distance_remaining
-                self.last_feedback = {
-                    "distance_remaining": getattr(f, "distance_remaining", 0.0),
-                    "recoveries": getattr(f, "number_of_recoveries", 0),
-                }
-            except Exception:
-                pass
-
-        send_fut = self.client.send_goal_async(goal, feedback_callback=_feedback_cb)
-
-        def _after_send(fut):
-            try:
-                gh = fut.result()
-                if not gh or not gh.accepted:
-                    self.status = "failed"
-                    return
-                self.goal_handle = gh
-                res_fut = gh.get_result_async()
-
-                def _after_result(rf):
-                    try:
-                        res = rf.result()                    # GetResult.Response
-                        st = res.status                      # int (GoalStatus.*)
-                        if st == GoalStatus.STATUS_SUCCEEDED:
-                            self.status = "arrived"
-                            try:
-                                enqueue_arrival(self.current_target)
-                            except Exception:
-                                pass
-                        elif st == GoalStatus.STATUS_CANCELED:
-                            self.status = "idle"
-                        else:
-                            # ABORTED or others
-                            self.status = "failed"
-                    except Exception:
-                        self.status = "failed"
-
-                res_fut.add_done_callback(_after_result)
-            except Exception:
-                self.status = "failed"
-
-        send_fut.add_done_callback(_after_send)
-        return "Goal accepted (navigating)."
-
-    def cancel_goal(self):
-        if not self.goal_handle:
-            return "No active goal."
-        self.status = "cancelling"
-        fut = self.goal_handle.cancel_goal_async()
-        def _after_cancel(_):
-            self.status = "idle"
-            self.goal_handle = None
-        fut.add_done_callback(_after_cancel)
-        return "Cancel requested."
+ui = UIStatePublisher()
 
 # Spin ROS in a background thread once at startup
 _nav_exec = None
@@ -137,7 +30,7 @@ def start_ros_background():
         return
     if not rclpy.ok():
         rclpy.init()
-    _nav_node = Nav2AsyncBridge()
+    _nav_node = Nav2AsyncBridge(enqueue_arrival=enqueue_arrival)
     _nav_exec = MultiThreadedExecutor()
     _nav_exec.add_node(_nav_node)
     threading.Thread(target=_nav_exec.spin, daemon=True).start()
@@ -167,9 +60,6 @@ MODEL_NAME = "gpt-4.1-nano"
 # UI & backend endpoints
 # =========================
 ROBOT_BACKEND_URL = "http://127.0.0.1:8002"
-llm_thinking = ROBOT_BACKEND_URL + "/llm_thinking/"
-llm_recording = ROBOT_BACKEND_URL + "/llm_recording/"
-
 ALSA_DEVICE = None  # e.g., "hw:1,0" after checking `aplay -l`
 # =========================
 # Globals
@@ -271,9 +161,9 @@ def generate_system_prompt():
     waypoint_names = sorted(WAYPOINTS.keys())
     waypoints_bulleted = "\n".join(f"- {name}" for name in waypoint_names)
 
-    base_prompt = f"""You are a tour guide robot named Sage at Valparaiso University's College of Engineering.
+    base_prompt = f"""You are a tour guide robot named Sage at Valparaiso University's College of Engineering building Gellersen.
 
-Your job is to guide visitors by driving to named campus locations and engaging them with short, helpful dialogue.
+Your job is to guide visitors by driving to named locations inside Gellersen and engaging them with short, witty, and helpful dialogue. People may ask inappropriate or off-topic questions try to answer in a funny way.
 
 IMPORTANT:
 - Always use the exact waypoint names listed below when calling tools.
@@ -301,6 +191,9 @@ ON ARRIVAL:
 CONVERSATION STYLE:
 - Be helpful, warm, and concise.
 - Do not use *, #, or _ characters in your responses.
+
+EXTRA INFO:
+- Fayulh created you, he is a senior computer engineering student. This was for a senior design project. You are just a prototype.
 """
 
     return base_prompt + status_section if status_section else base_prompt
@@ -348,11 +241,7 @@ def set_recording():
         is_recording_flag = True
         if VERBOSE_STT:
             log("🎙️  Recording START")
-        try:
-            requests.get(llm_thinking + "unset", timeout=0.25)
-            requests.get(llm_recording + "set", timeout=0.25)
-        except Exception:
-            pass
+        ui.listening()
     except Exception:
         log_exc("set_recording")
 
@@ -361,10 +250,6 @@ def unset_recording():
     is_recording_flag = False
     if VERBOSE_STT:
         log("🎙️  Recording STOP")
-    try:
-        requests.get(llm_recording + "unset", timeout=0.25)
-    except Exception:
-        pass
 
 # =========================
 # Eventing
@@ -480,12 +365,7 @@ def process_by_llm_streaming(messages, tools, max_depth=3):
     """
     depth = 0
     try:
-        # thinking UI on
-        try:
-            requests.get(llm_thinking + "set", timeout=0.25)
-        except Exception:
-            pass
-
+        ui.thinking()
         while True:
             if tts.is_playing():
                 if VERBOSE_TTS:
@@ -591,11 +471,7 @@ def process_by_llm_streaming(messages, tools, max_depth=3):
             return assistant_text, messages
 
     finally:
-        # thinking UI off
-        try:
-            requests.get(llm_thinking + "unset", timeout=0.25)
-        except Exception:
-            pass
+        pass
 
 # =========================
 # Graceful shutdown
@@ -642,6 +518,7 @@ ready_chime_path = "assets/audio/ui-wakesound.wav"
 def on_wakeword():
     if tts.is_playing():
         tts.stop()  # stop ONLY on “sage”
+    ui.listening()
     threading.Thread(target=play_wav, args=(ready_chime_path,), daemon=True).start()
 # =========================
 # Main
@@ -655,6 +532,8 @@ if __name__ == "__main__":
             buffer_time_us=40000,   # tune: 40000–120000
             period_size=256         # tune: 256/512/1024
         )
+        tts.on_start = lambda: ui.speaking()
+        tts.on_end = lambda: ui.idle()
         if VERBOSE_TTS:
             log("✅ PiperTTS ready.")
     except Exception:
@@ -686,10 +565,10 @@ if __name__ == "__main__":
     if USE_WAKEWORD:
         recorder_kwargs.update(
             wakeword_backend=["pvporcupine", "openwakeword"][1],
-            openwakeword_model_paths="assets/models/wakeword/sage_wakeword.onnx",
+            openwakeword_model_paths="assets/models/wakeword/sage_wakeword_2.onnx, assets/models/wakeword/hey_sage_2.onnx",
             openwakeword_inference_framework="onnx",
             wake_words_sensitivity=0.5,      # try 0.7–0.85 in a school
-            wake_word_buffer_duration=0.75,  # 0.75–1.0s keeps “sage” out of transcript,
+            wake_word_buffer_duration=0.3,  # 0.75-1s to keep "sage" out of transcript
             on_wakeword_detected=on_wakeword,
             wake_words="sage"  # You need to leave this here for openwakeword to work (even though it's not used)
         )

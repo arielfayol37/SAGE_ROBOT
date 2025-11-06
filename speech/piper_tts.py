@@ -5,8 +5,9 @@ import uuid
 import wave
 import subprocess
 import threading
-from typing import Optional
+from typing import Optional, Callable
 from piper import PiperVoice
+
 
 class PiperTTS:
     """
@@ -15,6 +16,12 @@ class PiperTTS:
     - Synthesizes full text to a temp WAV (RAM if /dev/shm available).
     - Plays via ALSA (aplay).
     - Supports stop/barge-in and status checks.
+
+    Usage:
+        tts = PiperTTS("model.onnx")
+        tts.on_start = lambda: print("speaking...")
+        tts.on_end   = lambda: print("idle.")
+        tts.say("Hello!", block=False)
     """
 
     def __init__(
@@ -25,11 +32,16 @@ class PiperTTS:
         buffer_time_us: Optional[int] = None,      # e.g., 40000 … 120000
         period_size: Optional[int] = None,         # e.g., 256, 512, 1024
         warmup: bool = True,
+        on_start: Optional[Callable[[], None]] = None,
+        on_end: Optional[Callable[[], None]] = None,
     ):
         self.voice = PiperVoice.load(model_path)
         self.aplay_device = aplay_device
         self.buffer_time_us = buffer_time_us
         self.period_size = period_size
+
+        self.on_start: Optional[Callable[[], None]] = on_start
+        self.on_end: Optional[Callable[[], None]] = on_end
 
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
@@ -41,6 +53,7 @@ class PiperTTS:
             p = self._tmpwav_path()
             try:
                 with wave.open(p, "wb") as w:
+                    # Synthesize a trivial utterance; content doesn't matter
                     self.voice.synthesize_wav(".", w)
             finally:
                 self._safe_rm(p)
@@ -108,21 +121,37 @@ class PiperTTS:
         return cmd
 
     def _play_blocking(self, wav_path: str):
+        # Launch aplay process
         with self._lock:
             self._last_wav_path = wav_path
             self._proc = subprocess.Popen(self._aplay_cmd(wav_path))
+
+        # Fire on_start outside the lock to avoid user callback deadlocks
         try:
+            if callable(self.on_start):
+                try:
+                    self.on_start()
+                except Exception:
+                    pass
+
+            # Block until playback finishes (or is stopped)
             self._proc.wait()
         finally:
+            # Cleanup & on_end
             with self._lock:
                 self._proc = None
                 self._safe_rm(wav_path)
                 self._last_wav_path = None
 
+            if callable(self.on_end):
+                try:
+                    self.on_end()
+                except Exception:
+                    pass
+
     def _play_background(self, wav_path: str):
-        # only one play thread at a time
+        # Only one play thread at a time; with interrupt=True this should be rare
         if self._play_thread and self._play_thread.is_alive():
-            # should not happen with interrupt=True, but guard anyway
             self._play_thread.join(timeout=0.05)
 
         self._play_thread = threading.Thread(

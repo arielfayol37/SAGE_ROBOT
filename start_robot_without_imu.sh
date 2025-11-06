@@ -45,7 +45,7 @@ tmux new-window -t "$SESSION" -n "Video Server" "bash -lc '
 
 # 2) Static Files on :8001 
 tmux new-window -t "$SESSION" -n "Static Files" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT/signaling/static
+  cd $HOME/Desktop/SAGE_ROBOT/interface/teleop_interface
   /usr/bin/python3 -m http.server 8001 || { echo http.server failed; sleep 5; }
   exec bash
 '"
@@ -70,7 +70,7 @@ tmux new-window -t "$SESSION" -n "Teleop Bridge" "bash -lc '
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  ros2 run web_teleop_bridge serial_bridge || { echo serial_bridge failed; sleep 5; }
+  ros2 run web_teleop_bridge serial_bridge_without_imu || { echo serial_bridge failed; sleep 5; }
   exec bash
 '"
 
