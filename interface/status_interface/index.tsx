@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { AnimatePresence, motion } from "framer-motion";
 
 /**
- * SAGE Face UI  cinematic "robot face" for 5 states + error.
+ * SAGE Face UI cinematic "robot face" for 5 states + error.
  * Demo: Space = next phase, D = toggle debug drawer, P = sample popup.
  */
 
@@ -39,36 +39,102 @@ const morphVariants: Record<Phase, any> = {
 };
 
 export default function SageFace(){
-  // Transition orchestrator timing (ms)
-  const TRANS_MS = 520;
-  // WS wiring later
-  const [connected] = useState(false);
-  const [latency] = useState<number | null>(null);
+ // --- WS config ---
+const WS_HOST = location.hostname || "JETSON_IP_HERE";
+const WS_URL  = `ws://${WS_HOST}:8765/ws/status`;
 
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [prevPhase, setPrevPhase] = useState<Phase>('idle');
-  const [asrPartial] = useState('');
-  const [asrFinal] = useState('');
-  const [battery] = useState({ pct: 0.82, charging: false });
-  const [viseme] = useState(0);
+// Replace these with setters (they’re currently constants in your code)
+const [connected, setConnected]   = useState(false);
+const [latency, setLatency]       = useState<number|null>(null);
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [popups, setPopups] = useState<{id:number; text:string; kind?:'info'|'ok'|'warn'|'error'}[]>([]);
-  const idRef = useRef(1);
+const [phase, setPhase]           = useState<Phase>('idle');
+const [prevPhase, setPrevPhase]   = useState<Phase>('idle');
 
-  // Demo driver (4� longer per your request)
-  useEffect(() => {
-    let demoTimer: number | null = null;
-    const cyclePhase = () => setPhase((prev) => { const i = PHASES.indexOf(prev); const next = PHASES[(i+1)%PHASES.length]; setPrevPhase(prev); return next; });
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'd' || e.key === 'D') setDrawerOpen(v=>!v);
-      if (e.key === ' ') { e.preventDefault(); cyclePhase(); }
-      if (e.key === 'p' || e.key === 'P') pushPopup('New destination set: ECE_LAB_1', 'ok');
+const [asrPartial, setAsrPartial] = useState('');
+const [asrFinal,   setAsrFinal]   = useState('');
+
+const [battery, setBattery]       = useState({ pct: 0, charging: false });
+const [viseme,  setViseme]        = useState(0);
+
+const [drawerOpen, setDrawerOpen] = useState(false);
+const [popups, setPopups]         = useState<{id:number; text:string; kind?:'info'|'ok'|'warn'|'error'}[]>([]);
+const idRef = useRef(1);
+
+// --- Live WS wiring with auto-reconnect + ping/pong latency ---
+useEffect(() => {
+  let ws: WebSocket | null = null;
+  let pingTimer: number | null = null;
+  let lastPingTs: number | null = null;
+  let backoff = 500; // ms -> grows to ~5s
+
+  const connect = () => {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      setConnected(true);
+      backoff = 500;
+      // start ping every 7s
+      pingTimer = window.setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          lastPingTs = performance.now();
+          ws.send(JSON.stringify({ type: "ping", t: lastPingTs }));
+        }
+      }, 7000) as unknown as number;
     };
-    window.addEventListener('keydown', onKey);
-    demoTimer = window.setInterval(() => { cyclePhase(); }, 9600) as unknown as number;
-    return () => { window.removeEventListener('keydown', onKey); if (demoTimer) window.clearInterval(demoTimer); };
-  }, []);
+
+    ws.onmessage = (ev) => {
+      let m: UiMessage;
+      try { m = JSON.parse(ev.data); } catch { return; }
+
+      if (m.type === "pong" && typeof m.t === "number" && lastPingTs != null) {
+        setLatency(Math.max(0, Math.round(performance.now() - lastPingTs)));
+        return;
+      }
+      if (m.type === "battery") {
+        // pct is [0..1]
+        setBattery({ pct: Math.max(0, Math.min(1, m.pct ?? 0)), charging: !!m.is_charging });
+        return;
+      }
+      if (m.type === "ui_state") {
+        if (m.phase && m.phase !== phase) {
+          setPrevPhase(phase);
+          setPhase(m.phase as Phase);
+        }
+        if (typeof m.asr_partial === "string") setAsrPartial(m.asr_partial);
+        if (typeof m.asr_final   === "string") setAsrFinal(m.asr_final);
+        if (typeof m.tts_viseme  === "number") setViseme(m.tts_viseme|0);
+        if (m.error_msg) {
+          pushPopup(m.error_msg, 'error');
+        }
+        return;
+      }
+      if (m.type === "diag" && m.msg) {
+        // Optional: surface as transient popup
+        pushPopup(m.msg, (m.level === 'warn' ? 'warn' : m.level === 'error' ? 'error' : 'info'));
+      }
+    };
+
+    const onClose = () => {
+      setConnected(false);
+      if (pingTimer) { window.clearInterval(pingTimer); pingTimer = null; }
+      // exponential-ish backoff up to 5s
+      const wait = Math.min(backoff, 5000);
+      backoff = Math.min(backoff * 1.7, 5000);
+      setTimeout(connect, wait);
+    };
+
+    ws.onerror = onClose;
+    ws.onclose = onClose;
+  };
+
+  connect();
+
+  return () => {
+    if (pingTimer) window.clearInterval(pingTimer);
+    try { ws && ws.close(); } catch {}
+  };
+}, [WS_URL, phase]); // phase in deps keeps prevPhase tracking snappy
+
 
   function pushPopup(text: string, kind: 'info'|'ok'|'warn'|'error' = 'info'){
     if (!text) return; const id = idRef.current++; setPopups(prev => [...prev, { id, text, kind }]);
@@ -214,7 +280,7 @@ function phasePath(p: Phase){
   }
 }
 
-/** SPEAKING: ArcEQ mouth (24 radial bars along a bottom semicircle) */
+/** SPEAKING: Arc EQ mouth (24 radial bars along a bottom semicircle) */
 function SpeakingMouth({ viseme }:{ viseme:number }){
   const n = 24;
   const phases = useMemo(() => Array.from({length:n}, (_,i)=> i*0.38), []);
@@ -504,21 +570,5 @@ html,body{ background:var(--bg); }
 @media (prefers-reduced-motion: reduce){ .aura, .listening, .arc-eq, .ring-a, .ring-b { animation-duration: .6 !important; } .aura-error{ animation: none; } }
 `;
 
-// -------- Dev tests (run only when NODE_ENV === 'test') --------
-function runDevTests(){
-  // Existing test
-  PHASES.forEach(p => { const d = phasePath(p as Phase); console.assert(typeof d === 'string' && d.length > 0, `phasePath(${p}) returns string`); });
-  // New tests
-  const rgba = hexA('#112233', 0.5); console.assert(/^rgba\(\d+,\d+,\d+,0\.5\)$/.test(rgba), 'hexA should produce rgba(r,g,b,a)');
-  const keysOk = PHASES.every(p => Object.prototype.hasOwnProperty.call(morphVariants, p)); console.assert(keysOk, 'morphVariants has all phases');
-  const barsCount = 24; console.assert(barsCount === 24, 'speaking bars should be 24');
-  const paletteOk = PHASES.every(p => !!phasePalette[p]); console.assert(paletteOk, 'phasePalette has all phases');
-}
-try {
-  if (typeof process !== 'undefined' && (process as any).env && (process as any).env.NODE_ENV === 'test') {
-    runDevTests();
-  }
-} catch (e) {
-  // no-op in browser sandbox
-}
+
 ReactDOM.createRoot(document.getElementById("root")).render(<SageFace />);

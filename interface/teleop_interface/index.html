@@ -173,7 +173,7 @@
   document.getElementById('cam').src =
     "http://" + HOST + ":8080/stream?topic=/image_raw&type=mjpeg&width=480&height=270&quality=80";
 
-  const ws = new WebSocket("ws://" + HOST + ":8765");
+  const ws = new WebSocket("ws://" + HOST + ":8765" + "/ws/teleop");
   const statusEl = document.getElementById('status');
   ws.onopen  = () => { ws.send(JSON.stringify({ role: "browser" })); statusEl.textContent = "Connected"; };
   ws.onclose = () => { statusEl.textContent = "Disconnected"; zero(); };
