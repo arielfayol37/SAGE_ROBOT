@@ -69,10 +69,10 @@ void Error_Handler(void);
 #define USART2_RX_GPIO_Port GPIOA
 #define LED_GREEN_Pin GPIO_PIN_5
 #define LED_GREEN_GPIO_Port GPIOA
-#define Encoder_1_A_Pin GPIO_PIN_6
-#define Encoder_1_A_GPIO_Port GPIOA
 #define Encoder_1_B_Pin GPIO_PIN_7
 #define Encoder_1_B_GPIO_Port GPIOA
+#define Encoder_1_A_Pin GPIO_PIN_6
+#define Encoder_1_A_GPIO_Port GPIOC
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
