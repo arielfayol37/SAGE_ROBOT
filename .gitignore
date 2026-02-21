@@ -1,5 +1,6 @@
 .*venv/
 __pycache__/
+*__pycache__/
 speech/api_keys.json
 speech/*.onnx
 speech/assets/models/piper/
@@ -30,3 +31,11 @@ __pycache__/
 
 # SLLIDAR ROS2 package build artifacts
 ros2_ws/src/sllidar_ros2/
+
+# Knowledge base
+knowledge_base/.env
+knowledge_base/.venv/
+knowledge_base/venv/
+knowledge_base/*__pycache__/
+knowledge_base/*.pyc
+knowledge_base/postgres_db
