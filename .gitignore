@@ -43,9 +43,7 @@ knowledge_base/postgres_db
 # ML weights / models
 *.pth
 *.pt
-*.onnx
 
 # (optional) local model directories
 backend/models/
-speech/assets/models/
-
+backend/
