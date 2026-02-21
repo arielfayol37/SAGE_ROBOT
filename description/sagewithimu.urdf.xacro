@@ -1,21 +1,21 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="sage">
   <!-- === Dimensions === -->
-  <xacro:property name="base_width" value="0.4083"/>
-  <xacro:property name="base_length" value="0.3691"/>
-  <xacro:property name="base_thickness" value="0.02"/>
+  <xacro:property name="base_width" value="0.3048"/>
+  <xacro:property name="base_length" value="0.558"/>
+  <xacro:property name="base_thickness" value="0.043"/>
 
-  <xacro:property name="wheel_radius" value="0.0505"/>
-  <xacro:property name="front_wheel_radius" value="0.0415"/>
-  <xacro:property name="wheel_thickness" value="0.0254"/>
-  <xacro:property name="wheel_x_from_back" value="0.0794"/>
-  <xacro:property name="front_wheel_x_from_front" value="0.04572"/>
-  <xacro:property name="lidar_height" value="0.2124"/>
+  <xacro:property name="wheel_radius" value="0.0762"/>
+  <xacro:property name="front_wheel_radius" value="0.0762"/>
+  <xacro:property name="wheel_thickness" value="0.0508"/>
+  <xacro:property name="wheel_x_from_back" value="0.04608"/>
+  <xacro:property name="front_wheel_x_from_front" value="0.044718"/>
+  <xacro:property name="lidar_height" value="0.5268"/>
 
-  <xacro:property name="base_z" value="0.08731"/>
+  <xacro:property name="base_z" value="0.0522"/>
   <xacro:property name="half_len" value="${base_length/2.0}"/>
   <xacro:property name="half_wid" value="${base_width/2.0}"/>
-  <xacro:property name="track_width" value="0.484"/>
+  <xacro:property name="track_width" value="0.3612"/>
   <xacro:property name="half_track" value="${track_width / 2.0}"/>
   <xacro:property name="rear_wheel_x" value="${-half_len + wheel_x_from_back}"/>
 
@@ -32,14 +32,14 @@
       <inertia ixx="0.2" ixy="0" ixz="0" iyy="0.2" iyz="0" izz="0.2"/>
     </inertial>
     <visual>
-      <origin xyz="0 0 ${base_z + base_thickness/2.0}" rpy="0 0 0"/>
+      <origin xyz="0 0 ${base_z + base_thickness}" rpy="0 0 0"/>
       <geometry>
         <box size="${base_length} ${base_width} ${base_thickness}"/>
       </geometry>
       <material name="grey"/>
     </visual>
     <collision>
-      <origin xyz="0 0 ${base_z + base_thickness/2.0}" rpy="0 0 0"/>
+      <origin xyz="0 0 ${base_z + base_thickness}" rpy="0 0 0"/>
       <geometry>
         <box size="${base_length} ${base_width} ${base_thickness}"/>
       </geometry>
@@ -125,8 +125,10 @@
   <joint name="lidar_mount" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <origin xyz="0 0 ${lidar_height}" rpy="0 0 ${pi}"/> <!-- LIDAR mounted 180 degrees rotated I think -->
+    <!-- <origin xyz="0 0 ${lidar_height}" rpy="0 0 ${pi}"/>  LIDAR mounted 180 degrees rotated I think -->
+    <origin xyz="0 0 ${lidar_height}" rpy="0 0 0"/> <!-- LIDAR mounted 180 degrees rotated I think -->
   </joint>
+
 
   <!-- === IMU Link === -->
   <link name="imu_link">
@@ -152,7 +154,7 @@
   <joint name="imu_mount" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <origin xyz="0.085725 -0.0635 ${base_z + base_thickness/2.0}" rpy="0 ${pi/2} 0"/> <!-- Corrected z-coordinate -->
+    <origin xyz="-0.0615 -0.102 ${base_z + base_thickness}" rpy="0 ${pi/2} 0"/> <!-- Corrected z-coordinate -->
   </joint>
 
   <!-- === Nav2 footprint (optional) === -->

@@ -36,7 +36,6 @@ from std_msgs.msg import String as RosString
 # ---- Config ----
 HOST = os.environ.get("SAGE_WS_HOST", "0.0.0.0")
 PORT = int(os.environ.get("SAGE_WS_PORT", "8765"))
-CONTROL_HZ_MAX = float(os.environ.get("SAGE_CONTROL_HZ_MAX", "30"))  # rate-limit /cmd_vel
 PING_INTERVAL = 20
 PING_TIMEOUT = 20
 
@@ -72,10 +71,6 @@ class SageHubNode(Node):
 
         self.create_subscription(BatteryState, "/battery_state", self._on_battery, bat_qos)
         self.create_subscription(RosString, "/sage/ui_state_json", self._on_ui_json, ui_qos)
-
-        # control rate limiter
-        self._last_cmd_time = 0.0
-        self._min_cmd_dt = 1.0 / max(1e-3, CONTROL_HZ_MAX)
 
         # the asyncio loop the websockets server runs on (assigned in run_server)
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -180,15 +175,12 @@ class SageHubNode(Node):
 
                 # teleop control
                 if mtype == "control":
-                    now = time.time()
-                    if now - self._last_cmd_time >= self._min_cmd_dt:
-                        x = float(msg.get("x", 0.0))
-                        z = float(msg.get("z", 0.0))
-                        tw = Twist()
-                        tw.linear.x = x
-                        tw.angular.z = z
-                        self.cmd_pub.publish(tw)
-                        self._last_cmd_time = now
+                    x = float(msg.get("x", 0.0))
+                    z = float(msg.get("z", 0.0))
+                    tw = Twist()
+                    tw.linear.x = x
+                    tw.angular.z = z
+                    self.cmd_pub.publish(tw)
                     continue
 
                 # on-demand snapshot
