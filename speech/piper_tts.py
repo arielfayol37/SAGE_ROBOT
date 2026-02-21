@@ -11,14 +11,14 @@ from piper import PiperVoice
 
 class PiperTTS:
     """
-    Minimal, fast Piper wrapper.
+    Minimal, fast Piper wrapper with Pulse/PipeWire routing support.
     - Loads voice once.
     - Synthesizes full text to a temp WAV (RAM if /dev/shm available).
-    - Plays via ALSA (aplay).
-    - Supports stop/barge-in and status checks.
+    - Plays via ALSA or Pulse (aplay/paplay).
+    - Supports stop/barge-in and status callbacks.
 
     Usage:
-        tts = PiperTTS("model.onnx")
+        tts = PiperTTS("model.onnx", aplay_device="pulse", pulse_sink_name="echo_cancelled.sink")
         tts.on_start = lambda: print("speaking...")
         tts.on_end   = lambda: print("idle.")
         tts.say("Hello!", block=False)
@@ -28,15 +28,17 @@ class PiperTTS:
         self,
         model_path: str,
         *,
-        aplay_device: Optional[str] = None,        # e.g., "hw:1,0" or None for default
-        buffer_time_us: Optional[int] = None,      # e.g., 40000 … 120000
-        period_size: Optional[int] = None,         # e.g., 256, 512, 1024
+        aplay_device: Optional[str] = None,        # "pulse" to use Pulse/PipeWire; or "hw:X,Y"
+        pulse_sink_name: Optional[str] = None,     # e.g., "echo_cancelled.sink"
+        buffer_time_us: Optional[int] = None,      # ALSA hint; may be ignored when using pulse
+        period_size: Optional[int] = None,         # ALSA hint; may be ignored when using pulse
         warmup: bool = True,
         on_start: Optional[Callable[[], None]] = None,
         on_end: Optional[Callable[[], None]] = None,
     ):
         self.voice = PiperVoice.load(model_path)
         self.aplay_device = aplay_device
+        self.pulse_sink_name = pulse_sink_name
         self.buffer_time_us = buffer_time_us
         self.period_size = period_size
 
@@ -49,25 +51,18 @@ class PiperTTS:
         self._last_wav_path: Optional[str] = None
 
         if warmup:
-            # Tiny warmup to avoid first-utterance lag
             p = self._tmpwav_path()
             try:
                 with wave.open(p, "wb") as w:
-                    # Synthesize a trivial utterance; content doesn't matter
                     self.voice.synthesize_wav(".", w)
             finally:
                 self._safe_rm(p)
 
     # ----------------- public API -----------------
     def say(self, text: str, *, block: bool = False, interrupt: bool = True):
-        """
-        Synthesize and play `text`.
-        - block=False: returns immediately (play in background).
-        - interrupt=True: stop current playback before starting a new one.
-        """
+        """Synthesize and play `text`."""
         if not text or not text.strip():
             return
-
         if interrupt:
             self.stop()
 
@@ -82,9 +77,7 @@ class PiperTTS:
 
     def is_playing(self) -> bool:
         with self._lock:
-            if self._proc is None:
-                return False
-            return self._proc.poll() is None
+            return bool(self._proc and self._proc.poll() is None)
 
     def stop(self):
         """Stop current playback immediately and cleanup temp file."""
@@ -105,55 +98,62 @@ class PiperTTS:
                 self._last_wav_path = None
 
     def close(self):
-        """Alias for stop()."""
         self.stop()
 
     # ----------------- internals -----------------
-    def _aplay_cmd(self, wav_path: str):
-        cmd = ["aplay", "-q"]
-        if self.aplay_device:
-            cmd += ["-D", self.aplay_device]
+    def _play_cmd_and_env(self, wav_path: str):
+        """
+        Build the playback command and environment.
+        - If aplay_device == "pulse" or None: route through Pulse.
+        - If pulse_sink_name is set: export PULSE_SINK for this process.
+        """
+        env = os.environ.copy()
+
+        # Prefer aplay everywhere to keep latency knobs; fall back to paplay if desired.
+        use_pulse = (self.aplay_device is None) or (self.aplay_device == "pulse")
+        if use_pulse:
+            cmd = ["aplay", "-q", "-D", "pulse"]
+            if self.pulse_sink_name:
+                env["PULSE_SINK"] = self.pulse_sink_name
+        else:
+            # Raw ALSA path (will BYPASS AEC!). Only use if you really need hw access.
+            cmd = ["aplay", "-q", "-D", self.aplay_device]
+
+        # ALSA tuning flags (Pulse may ignore these; harmless to include)
         if self.buffer_time_us is not None:
             cmd += ["--buffer-time", str(self.buffer_time_us)]
         if self.period_size is not None:
             cmd += ["--period-size", str(self.period_size)]
+
         cmd += [wav_path]
-        return cmd
+        return cmd, env
 
     def _play_blocking(self, wav_path: str):
-        # Launch aplay process
+        # Launch playback subprocess
         with self._lock:
             self._last_wav_path = wav_path
-            self._proc = subprocess.Popen(self._aplay_cmd(wav_path))
+            cmd, env = self._play_cmd_and_env(wav_path)
+            self._proc = subprocess.Popen(cmd, env=env)
 
-        # Fire on_start outside the lock to avoid user callback deadlocks
         try:
             if callable(self.on_start):
-                try:
-                    self.on_start()
-                except Exception:
-                    pass
+                try: self.on_start()
+                except Exception: pass
 
-            # Block until playback finishes (or is stopped)
             self._proc.wait()
         finally:
-            # Cleanup & on_end
             with self._lock:
                 self._proc = None
                 self._safe_rm(wav_path)
                 self._last_wav_path = None
 
             if callable(self.on_end):
-                try:
-                    self.on_end()
-                except Exception:
-                    pass
+                try: self.on_end()
+                except Exception: pass
 
     def _play_background(self, wav_path: str):
-        # Only one play thread at a time; with interrupt=True this should be rare
         if self._play_thread and self._play_thread.is_alive():
             self._play_thread.join(timeout=0.05)
-
         self._play_thread = threading.Thread(
             target=self._play_blocking, args=(wav_path,), daemon=True
         )
