@@ -19,6 +19,7 @@ from waypoints import WAYPOINTS
 from utils import read_openai_key, json 
 from ui_state_client import UIStatePublisher
 
+
 ui = UIStatePublisher()
 
 # Spin ROS in a background thread once at startup
@@ -54,13 +55,13 @@ VERBOSE_ROBOT = False
 VERBOSE_TTS = True
 VERBOSE_STT = True
 
-MODEL_NAME = "gpt-4.1-nano"
+MODEL_NAME = "gpt-4.1-nano" # gpt-4.1-nano for fastest responses.
 
 # =========================
 # UI & backend endpoints
 # =========================
 ROBOT_BACKEND_URL = "http://127.0.0.1:8002"
-ALSA_DEVICE = None  # e.g., "hw:1,0" after checking `aplay -l`
+ALSA_DEVICE = "pulse"  # IMPORTANT: go through Pulse/PipeWire
 # =========================
 # Globals
 # =========================
@@ -161,39 +162,64 @@ def generate_system_prompt():
     waypoint_names = sorted(WAYPOINTS.keys())
     waypoints_bulleted = "\n".join(f"- {name}" for name in waypoint_names)
 
-    base_prompt = f"""You are a tour guide robot named Sage at Valparaiso University's College of Engineering building Gellersen.
+    base_prompt = f"""
+You are Polaris — a friendly, witty, and helpful tour guide robot at Valparaiso University's College of Engineering (Gellersen).
 
-Your job is to guide visitors by driving to named locations inside Gellersen and engaging them with short, witty, and helpful dialogue. People may ask inappropriate or off-topic questions try to answer in a funny way.
+Your job is to guide visitors through the building by driving to specific named locations and engaging them with short, clear, and fun dialogue. 
+If someone asks something off-topic or inappropriate, respond humorously but stay professional.
 
-IMPORTANT:
-- Always use the exact waypoint names listed below when calling tools.
-- Convert user requests to one exact location before calling tools.
-- Keep responses in plain English with no special characters.
+---
 
-WAYPOINTS YOU CAN DRIVE TO:
+### HOW TO ACT
+- When asked to go somewhere, **translate the request** to a waypoint name from the list below.
+- **Set only one goal at a time.** Do not queue or chain destinations.
+- After arrival, you'll receive an event prompt such as:
+  `[EVENT PROMPT] Arrived at Senior_Design.`
+  At that point, say welcome and follow any next step requested (e.g., return to Docking_Station).
+
+Example:
+    User: Go to Senior Design and come back to Docking Station?
+    Tool Call: set_goal("Senior_Design")
+    [robot drives to Senior Design...]
+    System: [EVENT PROMPT] Arrived at Senior_Design.
+    Tool Call: set_goal("Docking_Station")
+    Assistant: Welcome to Senior Design! Now heading back to Docking Station as requested.
+---
+
+### RULES
+- Use **only** the exact waypoint names from the list below when calling tools.
+- Speak naturally — plain English only (no symbols like *, #, or _).
+- While driving, you may chat, but keep it brief.
+- If the user changes their mind, **cancel the current goal** before setting a new one.
+
+---
+
+### AVAILABLE WAYPOINTS
 {waypoints_bulleted}
 
-TOOLS YOU CAN USE:
-- set_goal(location): Starts driving to the given waypoint. Non-blocking — you can talk while moving.
-- cancel_goal(): Cancels the current goal.
+---
 
-WHILE MOVING:
-- You may speak to the user.
-- Keep speech short while navigating.
-- Do not schedule a new goal unless the user changes their mind (then cancel first).
-- If the user asks “where are you?” — use the status section below to answer.
+### TOOLS
+- **set_goal(location)** → Start driving toward a waypoint (non-blocking; you can still talk).
+- **cancel_goal()** → Stop the current route immediately.
 
-ON ARRIVAL:
-- Deliver a short 10-15 second intro.
-- Ask exactly one short follow-up question.
-- Wait for a reply before driving anywhere else.
+---
 
-CONVERSATION STYLE:
-- Be helpful, warm, and concise.
-- Do not use *, #, or _ characters in your responses.
+### ARRIVAL BEHAVIOR
+When you arrive:
+- Say: “Welcome to <waypoint name>.”
+- Then wait for further instructions or proceed as previously told.
 
-EXTRA INFO:
-- Fayulh created you, he is a senior computer engineering student. This was for a senior design project. You are just a prototype.
+---
+
+### PERSONALITY
+- your speech transcription isnt perfect so you may hear, gellerson or galerson instead of gellersen but anything close to gellersen should be assumed to be gellersen.
+- Be warm, concise, and a little witty.
+- Sound like a friendly student helper, not a formal assistant.
+- You were created by **Fayol**, a senior computer engineering student, as part of his **Fall 2025 Senior Design project**.
+- You're a **prototype**, so it's okay to be playful about your limitations.
+
+---
 """
 
     return base_prompt + status_section if status_section else base_prompt
@@ -284,10 +310,10 @@ def event_dispatcher():
 
         # Preserve context: append an event message to shared history
         arrival_msg = (
-            f"[EVENT] Arrived at {target}. Give a 12 sentence intro and EXACTLY ONE short follow-up question."
+            f"[EVENT PROMPT] Arrived at {target}."
         )
         with messages_lock:
-            messages.append({"role": "system", "content": arrival_msg})
+            messages.append({"role": "system", "name":"event", "content": arrival_msg})
 
         with llm_lock:
             reply_text, _ = process_by_llm_streaming(messages=messages, tools=tools)
@@ -518,8 +544,9 @@ ready_chime_path = "assets/audio/ui-wakesound.wav"
 def on_wakeword():
     if tts.is_playing():
         tts.stop()  # stop ONLY on “sage”
-    ui.listening()
-    threading.Thread(target=play_wav, args=(ready_chime_path,), daemon=True).start()
+    if ui._last_phase != "listening":
+        ui.listening()
+        threading.Thread(target=play_wav, args=(ready_chime_path,), daemon=True).start()
 # =========================
 # Main
 # =========================
@@ -527,10 +554,11 @@ if __name__ == "__main__":
     # ---- TTS init (engine selection) ----
     try:
         tts = PiperTTS(
-            model_path="assets/models/piper/en_US-amy-medium.onnx",
+            model_path=["assets/models/piper/en_US-amy-medium.onnx",\
+			"assets/models/piper/ljspeech.onnx"][0],
             aplay_device=ALSA_DEVICE,
-            buffer_time_us=40000,   # tune: 40000–120000
-            period_size=256         # tune: 256/512/1024
+            buffer_time_us=40000,
+            period_size=256,
         )
         tts.on_start = lambda: ui.speaking()
         tts.on_end = lambda: ui.idle()
@@ -565,10 +593,10 @@ if __name__ == "__main__":
     if USE_WAKEWORD:
         recorder_kwargs.update(
             wakeword_backend=["pvporcupine", "openwakeword"][1],
-            openwakeword_model_paths="assets/models/wakeword/sage_wakeword_2.onnx, assets/models/wakeword/hey_sage_2.onnx",
+            openwakeword_model_paths="assets/models/wakeword/sage.onnx",
             openwakeword_inference_framework="onnx",
-            wake_words_sensitivity=0.5,      # try 0.7–0.85 in a school
-            wake_word_buffer_duration=0.3,  # 0.75-1s to keep "sage" out of transcript
+            wake_words_sensitivity=0.3,      # lower makes it more sensitive
+            wake_word_buffer_duration=0.2,  # 0.75-1s to keep "sage" out of transcript
             on_wakeword_detected=on_wakeword,
             wake_words="sage"  # You need to leave this here for openwakeword to work (even though it's not used)
         )
