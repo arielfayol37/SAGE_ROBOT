@@ -39,3 +39,13 @@ knowledge_base/venv/
 knowledge_base/*__pycache__/
 knowledge_base/*.pyc
 knowledge_base/postgres_db
+
+# ML weights / models
+*.pth
+*.pt
+*.onnx
+
+# (optional) local model directories
+backend/models/
+speech/assets/models/
+
