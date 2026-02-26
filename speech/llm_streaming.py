@@ -61,6 +61,7 @@ MODEL_NAME = "gpt-4.1-nano" # gpt-4.1-nano for fastest responses.
 # UI & backend endpoints
 # =========================
 ROBOT_BACKEND_URL = "http://127.0.0.1:8002"
+SEARCH_URL = "http://127.0.0.1:8004/api/kb/search"
 ALSA_DEVICE = "pulse"  # IMPORTANT: go through Pulse/PipeWire
 # =========================
 # Globals
@@ -119,7 +120,41 @@ tools = [
             "description": "Cancel the current Nav2 goal (if any).",
             "parameters": {"type": "object", "properties": {}}
         }
+    },
+    {
+    "type": "function",
+    "function": {
+        "name": "valpo_search",
+        "description": (
+            "Search the local Valparaiso University knowledge base for factual information. "
+            "Use this whenever the user asks about Valpo policies, programs, offices, "
+            "deadlines, facilities, departments, campus resources, or other university-specific details. "
+            "Returns relevant text chunks with citations."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "The natural language search query describing what information is needed. "
+                        "Should capture the user's question as clearly as possible."
+                    )
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": (
+                        "Maximum number of relevant chunks to retrieve from the knowledge base."
+                    ),
+                    "default": 3,
+                    "minimum": 1,
+                    "maximum": 20
+                }
+            },
+            "required": ["query"]
+        }
     }
+}
 ]
 
 def generate_system_prompt():
@@ -160,10 +195,10 @@ def generate_system_prompt():
 
     # --- Waypoint list ---
     waypoint_names = sorted(WAYPOINTS.keys())
-    waypoints_bulleted = "\n".join(f"- {name}" for name in waypoint_names)
+    waypoints_bulleted = "\n".join(f"- {name}: {WAYPOINTS[name]['description']}" for name in waypoint_names)
 
     base_prompt = f"""
-You are Polaris — a friendly, witty, and helpful tour guide robot at Valparaiso University's College of Engineering (Gellersen).
+You are SAGE — a friendly, witty, and helpful tour guide robot at Valparaiso University's College of Engineering (Gellersen).
 
 Your job is to guide visitors through the building by driving to specific named locations and engaging them with short, clear, and fun dialogue. 
 If someone asks something off-topic or inappropriate, respond humorously but stay professional.
@@ -202,7 +237,8 @@ Example:
 ### TOOLS
 - **set_goal(location)** → Start driving toward a waypoint (non-blocking; you can still talk).
 - **cancel_goal()** → Stop the current route immediately.
-
+- **valpo_search(query, top_k)** → Search Valpo KB for factual info (use for policies, programs, offices, deadlines, facilities, departments, campus resources, etc.). Returns text chunks with citations.
+When answering Valparaiso University-specific questions, always call valpo_search first. Only answer using retrieved information. If the knowledge base does not contain sufficient information, say so clearly instead of guessing.
 ---
 
 ### ARRIVAL BEHAVIOR
@@ -248,9 +284,47 @@ def cancel_goal():
     start_ros_background()
     return _nav_node.cancel_goal()
 
+def valpo_search(query: str, top_k: int = 3):
+    """
+    Calls the local KB search endpoint and returns structured results.
+    Expected response: {"results": [{"chunk_id":..., "text":..., "citation": {...}}, ...]}
+    """
+    top_k = max(1, min(int(top_k), 20))
+    ui.searching()
+    try:
+        resp = requests.get(
+            SEARCH_URL,
+            params={"q": query, "k": top_k},
+            timeout=(2, 8),  # connect, read
+        )
+        resp.raise_for_status()
+
+        data = resp.json()
+        results = data.get("results", [])
+
+        # Minimal validation / normalization
+        normalized = []
+        for r in results:
+            normalized.append({
+                "text": r.get("text", ""),
+                "chunk_id": r.get("chunk_id"),
+                "citation": r.get("citation", {}),
+            })
+
+        return {"query": query, "top_k": top_k, "results": normalized}
+
+    except requests.Timeout:
+        return {"query": query, "top_k": top_k, "results": [], "error": "KB search timed out."}
+    except requests.RequestException as e:
+        return {"query": query, "top_k": top_k, "results": [], "error": f"KB request failed: {e}"}
+    except ValueError as e:
+        # JSON decode error
+        return {"query": query, "top_k": top_k, "results": [], "error": f"Invalid JSON from KB: {e}"}
+
 funcs = {
     "set_goal": set_goal,
     "cancel_goal": cancel_goal,
+    "valpo_search": valpo_search,
 }
 
 
@@ -593,7 +667,7 @@ if __name__ == "__main__":
     if USE_WAKEWORD:
         recorder_kwargs.update(
             wakeword_backend=["pvporcupine", "openwakeword"][1],
-            openwakeword_model_paths="assets/models/wakeword/sage.onnx",
+            openwakeword_model_paths="assets/models/wakeword/sage_wakeword_2.onnx",
             openwakeword_inference_framework="onnx",
             wake_words_sensitivity=0.3,      # lower makes it more sensitive
             wake_word_buffer_duration=0.2,  # 0.75-1s to keep "sage" out of transcript

@@ -154,7 +154,7 @@
   <joint name="imu_mount" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <origin xyz="-0.0615 -0.102 ${base_z + base_thickness}" rpy="0 ${pi/2} 0"/> <!-- Corrected z-coordinate -->
+    <origin xyz="0.09756 -0.102 ${base_z + base_thickness}" rpy="0 ${pi/2} 0"/> <!-- Corrected z-coordinate -->
   </joint>
 
   <!-- === Nav2 footprint (optional) === -->

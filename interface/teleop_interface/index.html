@@ -23,7 +23,7 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  .wheel, .pedal { touch-action: none; } 
+  .wheel, .pedal { touch-action: none; }
   /* SAGE POV (keep your original look) */
   .sage-pov {
     --ph-black: #ffffff; --ph-white: #ffffff; --ph-orange: #000000; --tight: -0.5px;
@@ -164,10 +164,11 @@
 <script>
 (() => {
   ['contextmenu','selectstart','dragstart'].forEach(evt =>
-  document.addEventListener(evt, e => {
-    if (e.target.closest('.wheel, .pedal')) e.preventDefault();
-  }, { passive: false })
-);
+    document.addEventListener(evt, e => {
+      if (e.target.closest('.wheel, .pedal')) e.preventDefault();
+    }, { passive: false })
+  );
+
   /* ------- Streams & WS ------- */
   const HOST = location.hostname || "JETSON_IP_HERE"; // set if opening file:// on phone
   document.getElementById('cam').src =
@@ -185,24 +186,24 @@
   }
 
   /* ------- Caps / speed scale (no persistence) ------- */
-  const MAX_X_BASE = 2;   // m/s  (robot capability)
+  const MAX_X_BASE = 2;     // m/s
   const MAX_Z_BASE = 1.5;   // rad/s
   let speedScale = 0.5;     // 0..1 (session only)
   const speedEl = document.getElementById('speedScale');
   const speedPct = document.getElementById('speedPct');
-  function caps(){ return { MAX_X: MAX_X_BASE * speedScale, MAX_Z: MAX_Z_BASE}; }
+  function caps(){ return { MAX_X: MAX_X_BASE * speedScale, MAX_Z: MAX_Z_BASE }; }
   speedEl.addEventListener('input', e => {
     speedScale = Number(e.target.value)/100;
     speedPct.textContent = `${e.target.value}%`;
   });
 
   /* ------- Input shaping helpers ------- */
-  function deadzone(u, dz=0.10){           // kill jitter near center
+  function deadzone(u, dz=0.10){
     if (Math.abs(u) < dz) return 0;
     const s = Math.sign(u), a = (Math.abs(u)-dz)/(1-dz);
     return s * a;
   }
-  function expo(u, k=0.35){                // finer low‑speed control
+  function expo(u, k=0.35){
     const s = Math.sign(u), a = Math.abs(u);
     return s * ((1-k)*a + k*a*a);
   }
@@ -212,61 +213,67 @@
     if (Math.abs(d) <= maxStep) return target;
     return current + Math.sign(d) * maxStep;
   }
-function curvatureScale(x, maxX){
+  function curvatureScale(x, maxX){
     const v = Math.abs(x) / Math.max(1e-6, maxX);
-    if (v < 0.1) return 1.0;                // ← full Z at (almost) zero linear speed
-    return 0.6 + 0.4*v;                      // gentle scaling when moving
+    if (v < 0.1) return 1.0;     // full Z at (almost) zero linear speed
+    return 0.6 + 0.4*v;          // gentle scaling when moving
   }
+
   /* ------- State ------- */
   let targetX = 0, targetZ = 0;            // desired
   let outX = 0, outZ = 0;                  // slewed
-  let lastX = 0, lastZ = 0;                // last sent
   let lastT = performance.now();
 
   // Slew rates (tune to taste)
   const SLEW_X = 2.0;   // m/s^2
   const SLEW_Z = 6.0;   // rad/s^2
 
+  // Always-send command heartbeat
+  const SEND_HZ = 50;
+  const SEND_PERIOD_MS = 1000 / SEND_HZ;  // 20ms
+  let lastSendT = 0;
+
   /* ------- Steering wheel (horizontal only) ------- */
   attachSteering(document.getElementById('steerWheel'), (nx) => {
     const { MAX_Z } = caps();
-     // nx = expo(deadzone(nx));
-    nx = deadzone(nx, 0.05);    
+    // nx = expo(deadzone(nx));
+    nx = deadzone(nx, 0.05);
     targetZ = MAX_Z * (-nx); // left nx<0 -> +z
   });
 
-function attachSteering(rootEl, onChange){
-  const knob = rootEl.querySelector('.knob');
-  let active = false, pid = null, center={x:0,y:0}, rBase=0, rKnob=0;
+  function attachSteering(rootEl, onChange){
+    const knob = rootEl.querySelector('.knob');
+    let active = false, pid = null, center={x:0,y:0}, rBase=0, rKnob=0;
 
-  const setKnob = dx => knob.style.transform = `translate(${dx}px,0)`;
+    const setKnob = dx => knob.style.transform = `translate(${dx}px,0)`;
 
-  rootEl.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    active = true; pid = e.pointerId; rootEl.setPointerCapture(pid);
-    const rect = rootEl.getBoundingClientRect();
-    center = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
-    rBase = Math.min(rect.width, rect.height)/2;
-    rKnob = knob.clientWidth/2;
-  });
+    rootEl.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      active = true; pid = e.pointerId; rootEl.setPointerCapture(pid);
+      const rect = rootEl.getBoundingClientRect();
+      center = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+      rBase = Math.min(rect.width, rect.height)/2;
+      rKnob = knob.clientWidth/2;
+    });
 
-  rootEl.addEventListener('pointermove', e => {
-    if (!active || e.pointerId !== pid) return;
-    const r = rBase - rKnob/2;
-    let dx = e.clientX - center.x;
-    dx = Math.max(-r, Math.min(r, dx));
-    setKnob(dx);
-    onChange(dx / r); // [-1,1]
-  });
+    rootEl.addEventListener('pointermove', e => {
+      if (!active || e.pointerId !== pid) return;
+      const r = rBase - rKnob/2;
+      let dx = e.clientX - center.x;
+      dx = Math.max(-r, Math.min(r, dx));
+      setKnob(dx);
+      onChange(dx / r); // [-1,1]
+    });
 
-  function end(e){
-    if (!active || (e && e.pointerId !== pid)) return;
-    active = false; rootEl.releasePointerCapture(pid); pid = null;
-    setKnob(0); onChange(0);
+    function end(e){
+      if (!active || (e && e.pointerId !== pid)) return;
+      active = false; rootEl.releasePointerCapture(pid); pid = null;
+      setKnob(0); onChange(0);
+    }
+    rootEl.addEventListener('pointerup', end);
+    rootEl.addEventListener('pointercancel', end);
   }
-  rootEl.addEventListener('pointerup', end);
-  rootEl.addEventListener('pointercancel', end);
-}
+
   /* ------- Pedals (visual + stateful press) ------- */
   const gasBtn  = document.getElementById('gasBtn');
   const revBtn  = document.getElementById('revBtn');
@@ -320,8 +327,8 @@ function attachSteering(rootEl, onChange){
 
     // Pedal logic: mutually exclusive preference; if both pressed, cancel out (net 0)
     const { MAX_X, MAX_Z } = caps();
-    const wantFwd = gasHeld   ?  1 : 0;
-    const wantRev = revHeld   ? -1 : 0;
+    const wantFwd = gasHeld ?  1 : 0;
+    const wantRev = revHeld ? -1 : 0;
     const want    = wantFwd + wantRev;  // -1, 0, or +1
     targetX = want * MAX_X;
 
@@ -333,27 +340,38 @@ function attachSteering(rootEl, onChange){
     const curvedZ = outZ * curvatureScale(outX, MAX_X);
 
     // Update pedal fill to reflect commanded *target* intent (feels game-like)
-    gasFill.style.width = `${Math.max(0, targetX / Math.max(1e-6,  MAX_X)) * 100}%`;
+    gasFill.style.width = `${Math.max(0,  targetX / Math.max(1e-6, MAX_X)) * 100}%`;
     revFill.style.width = `${Math.max(0, -targetX / Math.max(1e-6, MAX_X)) * 100}%`;
 
     // HUD shows *sent* outputs (slewed)
-    setBar(barX, (outX / Math.max(1e-6, MAX_X)));            // [-1,1]
-    setBar(barZ, (curvedZ / Math.max(1e-6, MAX_Z)));         // [-1,1] approx
+    setBar(barX, (outX     / Math.max(1e-6, MAX_X))); // [-1,1]
+    setBar(barZ, (curvedZ  / Math.max(1e-6, MAX_Z))); // [-1,1] approx
 
-    // Avoid WS spam by sending every frame (smooth) but it’s already throttled by slew
-    if (Math.abs(outX-lastX)>1e-3 || Math.abs(curvedZ-lastZ)>1e-3){
+    // Always send at 50Hz (heartbeat), even if unchanged
+    if (now - lastSendT >= SEND_PERIOD_MS) {
       send(outX, curvedZ);
-      lastX = outX; lastZ = curvedZ;
+      lastSendT = now;
     }
+
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
 
   /* ------- Safety ------- */
-  function zero(){ targetX=0; targetZ=0; outX=0; outZ=0; send(0,0); gasFill.style.width="0%"; revFill.style.width="0%"; }
+  function zero(){
+    targetX = 0; targetZ = 0;
+    outX = 0; outZ = 0;
+    lastSendT = 0;          // allow immediate send after zero()
+    send(0,0);
+    gasFill.style.width = "0%";
+    revFill.style.width = "0%";
+  }
   document.addEventListener('visibilitychange', ()=>{ if (document.hidden) zero(); });
   window.addEventListener('blur', zero);
 
+  // Example expected behavior:
+  // - Hold GAS steady -> websocket sends ~50 msgs/sec with same x,z.
+  // - No input -> still sends ~50 msgs/sec with (0,0) after slew settles.
 })();
 </script>
 </body>
