@@ -37,7 +37,7 @@
 
 #define Lw  0.381 // Distance between wheels (m)
 #define WHEEL_DIAMETER  0.154f // Wheel size (m)
-#define GEAR_RATIO  1.4f // Ratio from the motor to the wheel
+#define GEAR_RATIO  0.714f // Ratio from the motor to the wheel
 #define Max_RPM  3000.0f // motor speed at 100% speed (guess from aliexpress listing, this needs to be calculated)
 
 #define ENCODER_CPR        100       // counts per motor shaft rev (A or B channel edges before x4)
@@ -49,8 +49,8 @@
 #define CTRL_DT            (1.0f/CTRL_HZ)
 
 // PI gains (start conservative; tune on robot)
-#define KP                 0.1f
-#define KI                 0.25f
+#define KP                 0.4f
+#define KI                 8.0f
 #define KD                 0.0f       // optional; start at 0
 
 // PWM output limit (percent)
@@ -85,6 +85,8 @@
 
 #define MPU9250_ACCEL_XOUT_H 0x3B
 
+#define CMD_TIMEOUT_MS          250U   // if no valid cmd for 250ms -> ramp to stop
+#define RX_PAYLOAD_TIMEOUT_MS    50U   // if header received but payload not completed in 50ms -> resync
 
 
 /* USER CODE END PD */
@@ -111,6 +113,26 @@ volatile float desired_speed_R = 0.0f;     // m/s  (right wheel)
 
 volatile float speed_L = 0.0f;     // m/s  (left wheel)
 volatile float speed_R = 0.0f;     // m/s  (right wheel)
+
+// Commanded velocities from UART (do NOT reuse v/w which you use for measured odom)
+volatile float cmd_v = 0.0f;   // m/s commanded
+volatile float cmd_w = 0.0f;   // rad/s commanded
+volatile uint32_t last_cmd_ms = 0;
+
+// UART RX framing state (byte-wise header hunt, then payload)
+typedef enum {
+    RX_WAIT_HEADER = 0,
+    RX_WAIT_PAYLOAD
+} rx_state_t;
+
+static volatile rx_state_t rx_state = RX_WAIT_HEADER;
+static uint8_t  rx_header_byte = 0;
+static uint8_t  rx_payload[8];              // 2 floats = 8 bytes
+static volatile uint32_t rx_payload_start_ms = 0;
+
+// Forward decl helpers
+static void UART_StartRx(void);
+static void UART_RxWatchdog(void);
 
 
 //static float cmd_speed_L = 0.0f; // m/s  (left wheel) These are used for acceleration limiting
@@ -169,6 +191,34 @@ IMU_Data_t Read_IMU(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void UART_StartRx(void)
+{
+    rx_state = RX_WAIT_HEADER;
+
+    // Clear common UART error flags that can prevent RX after power-up noise
+    __HAL_UART_CLEAR_OREFLAG(&huart2);
+    __HAL_UART_CLEAR_NEFLAG(&huart2);
+    __HAL_UART_CLEAR_FEFLAG(&huart2);
+    __HAL_UART_CLEAR_PEFLAG(&huart2);
+    __HAL_UART_CLEAR_IDLEFLAG(&huart2);
+
+    // Arm reception of 1 byte (header hunt)
+    HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+}
+
+static void UART_RxWatchdog(void)
+{
+    // If we saw a header but never got the 8 payload bytes (line noise / host stop),
+    // abort and resync so we don't stay stuck forever.
+    if (rx_state == RX_WAIT_PAYLOAD) {
+        uint32_t now = HAL_GetTick();
+        if ((now - rx_payload_start_ms) > RX_PAYLOAD_TIMEOUT_MS) {
+            (void)HAL_UART_AbortReceive_IT(&huart2);
+            UART_StartRx();
+        }
+    }
+}
 
 
 static inline float clampf(float x, float lo, float hi) {
@@ -290,16 +340,16 @@ float counts_to_wheel_mps(int32_t delta_counts)
 // Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
 void Motor_SetSpeed_L(float v)
 {
-	uint16_t speed = 1500 - (v*125);
-	if (speed > 1600) speed = 1600;
-	if (speed < 1400) speed = 1400;
+	uint16_t speed = 1500 - (v*100);
+	if (speed > 1700) speed = 1700;
+	if (speed < 1300) speed = 1300;
 	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, speed);
 }
 void Motor_SetSpeed_R(float v)
 {
-	uint16_t speed =  1500 + (v*125);
-	if (speed > 1600) speed = 1600;
-	if (speed < 1400) speed = 1400;
+	uint16_t speed =  1500 + (v*100);
+	if (speed > 1700) speed = 1700;
+	if (speed < 1300) speed = 1300;
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, speed);
 }
 
@@ -315,63 +365,105 @@ void Robot_Set_Velocity(float v, float w)
 
 void Control_Update(void)
 {
-	// 1) Measure wheel speeds from encoders
-	int32_t dL = encoder_delta_counts(&htim4, &enc_prev_L);
-	int32_t dR = -encoder_delta_counts(&htim3, &enc_prev_R);
+    // --- Apply command timeout: if no recent UART cmd, force cmd_v/cmd_w to 0
+    uint32_t now_ms = HAL_GetTick();
+    float local_cmd_v = cmd_v;
+    float local_cmd_w = cmd_w;
 
-	float vL_meas = counts_to_wheel_mps(dL); // m/s
-	float vR_meas = counts_to_wheel_mps(dR); // m/s inverted because of the encoder direction
+    if ((now_ms - last_cmd_ms) > CMD_TIMEOUT_MS) {
+        local_cmd_v = 0.0f;
+        local_cmd_w = 0.0f;
+    }
 
-	float v_robot = (vL_meas + vR_meas) / 2.0f; // m/s
-	float w_robot = (vR_meas - vL_meas) / Lw; // rad/s
+    // Convert (v,w) command into wheel targets
+    float target_L = local_cmd_v - (local_cmd_w * Lw / 2.0f);
+    float target_R = local_cmd_v + (local_cmd_w * Lw / 2.0f);
 
-	// Integrate to update position and orientation
-	robot_Theta += w_robot * CTRL_DT;
-	robot_Theta = fmodf(robot_Theta, 2.0f * (float)M_PI); // keep theta in [0, 2pi)
+    // Slew-limit desired wheel speeds so stopping is gradual
+    const float max_dv = MAX_ACCEL_MPS2 * CTRL_DT; // m/s per control tick
 
-	robot_X += v_robot * cosf(robot_Theta) * CTRL_DT;
-	robot_Y += v_robot * sinf(robot_Theta) * CTRL_DT;
+    float stepL = clampf(target_L - desired_speed_L, -max_dv, +max_dv);
+    float stepR = clampf(target_R - desired_speed_R, -max_dv, +max_dv);
 
-	v = v_robot;
-	w = w_robot;
+    desired_speed_L += stepL;
+    desired_speed_R += stepR;
 
-	// Errors (m/s)
-	float eL = desired_speed_L - vL_meas;
-	float eR = desired_speed_R - vR_meas;
+    // 1) Measure wheel speeds from encoders
+    int32_t dL = encoder_delta_counts(&htim4, &enc_prev_L);
+    int32_t dR = -encoder_delta_counts(&htim3, &enc_prev_R);
 
-	// PI control (same as before)
-	i_term_L += KI * eL * CTRL_DT;
-	i_term_R += KI * eR * CTRL_DT;
-	i_term_L = clampf(i_term_L, -0.5f, 0.5f);
-	i_term_R = clampf(i_term_R, -0.5f, 0.5f);
+    float vL_meas = counts_to_wheel_mps(dL); // m/s
+    float vR_meas = counts_to_wheel_mps(dR); // m/s
 
+    float v_robot = (vL_meas + vR_meas) / 2.0f; // m/s
+    float w_robot = (vR_meas - vL_meas) / Lw;   // rad/s
 
-	float uL = KP * eL + i_term_L;
-	float uR = KP * eR + i_term_R;
+    // Integrate to update position and orientation
+    robot_Theta += w_robot * CTRL_DT;
+    robot_Theta = fmodf(robot_Theta, 2.0f * (float)M_PI);
 
-	Motor_SetSpeed_L(0.5f);
-	Motor_SetSpeed_R(0.5f);
+    robot_X += v_robot * cosf(robot_Theta) * CTRL_DT;
+    robot_Y += v_robot * sinf(robot_Theta) * CTRL_DT;
+
+    // These are MEASURED (used for odom TX)
+    v = v_robot;
+    w = w_robot;
+
+    // Errors (m/s)
+    float eL = desired_speed_L - vL_meas;
+    float eR = desired_speed_R - vR_meas;
+
+    // PI control
+    i_term_L += KI * eL * CTRL_DT;
+    i_term_R += KI * eR * CTRL_DT;
+    i_term_L = clampf(i_term_L, -0.5f, 0.5f);
+    i_term_R = clampf(i_term_R, -0.5f, 0.5f);
+
+    float uL = KP * eL + i_term_L;
+    float uR = KP * eR + i_term_R;
+
+    Motor_SetSpeed_L(desired_speed_L + uL);
+    Motor_SetSpeed_R(desired_speed_R + uR);
 }
+
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	if (huart->Instance == USART2)
-	{
+    if (huart->Instance != USART2) return;
 
-		if (rxPacket[0] == 120)   // header byte (e.g. 'x')
-		{
-			//Control_Packet(rxPacket[1]); // process control byte if needed
-			memcpy(&v, &rxPacket[1], sizeof(float)); // copy 4 bytes starting at rxPacket[1] into v
-			memcpy(&w, &rxPacket[1 + sizeof(float)], sizeof(float)); // copy next 4 bytes into w
+    if (rx_state == RX_WAIT_HEADER)
+    {
+        // Look for header byte 'x' == 120
+        if (rx_header_byte == 120)
+        {
+            rx_state = RX_WAIT_PAYLOAD;
+            rx_payload_start_ms = HAL_GetTick();
+            HAL_UART_Receive_IT(&huart2, rx_payload, sizeof(rx_payload)); // 8 bytes
+        }
+        else
+        {
+            // Keep hunting for header
+            HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+        }
+    }
+    else // RX_WAIT_PAYLOAD
+    {
+        float new_cmd_v = 0.0f;
+        float new_cmd_w = 0.0f;
 
-			Robot_Set_Velocity(v, w);
+        memcpy(&new_cmd_v, &rx_payload[0],  sizeof(float));
+        memcpy(&new_cmd_w, &rx_payload[4],  sizeof(float));
 
-			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+        cmd_v = new_cmd_v;
+        cmd_w = new_cmd_w;
+        last_cmd_ms = HAL_GetTick();
 
-		}
-		// restart interrupt reception
-		HAL_UART_Receive_IT(&huart2, rxPacket, sizeof(rxPacket));
-	}
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+
+        // Go back to header hunt (resync-friendly)
+        rx_state = RX_WAIT_HEADER;
+        HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+    }
 }
 
 
@@ -420,6 +512,14 @@ void Control_Packet(uint8_t Control_Byte)
 	}
 }
 
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance != USART2) return;
+
+    (void)HAL_UART_AbortReceive_IT(&huart2);
+    UART_StartRx();
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -462,6 +562,12 @@ int main(void)
 	Motors_Init(); // Start these motors dih
 	IMU_Init(); // ts pmo sybau
 
+    // Initialize cmd timing so it starts "timed out" => ramps to 0 until first cmd arrives
+    last_cmd_ms = HAL_GetTick();
+
+    // Start UART RX in resync-friendly mode
+    UART_StartRx();
+
 	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
 	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
 	const uint32_t imu_period    = 1000U / 100;     // 10 ms  -> 100 Hz
@@ -488,6 +594,9 @@ int main(void)
 
 		currentTime = HAL_GetTick();
 
+		// RX watchdog to escape "header received but payload never completed"
+		UART_RxWatchdog();
+
 		if( (currentTime - prevUpdateTime) >= tick_period){
 			Control_Update();
 			prevUpdateTime = currentTime;
@@ -503,12 +612,6 @@ int main(void)
 			TX_Imu(&d);
 			prevIMUTime = currentTime;
 		}
-		if( (currentTime - prevRXTime) >= RX_period){
-			HAL_UART_Receive_IT(&huart2, rxPacket, sizeof(rxPacket)); // start receiver
-			prevRXTime = currentTime;
-		}
-
-
 	}
   /* USER CODE END 3 */
 }

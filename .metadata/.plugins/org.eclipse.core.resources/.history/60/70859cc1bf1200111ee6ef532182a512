@@ -36,8 +36,8 @@
 
 
 #define Lw  0.381 // Distance between wheels (m)
-#define WHEEL_DIAMETER  0.152f // Wheel size (m)
-#define GEAR_RATIO  1.0f // Ratio from the motor to the wheel
+#define WHEEL_DIAMETER  0.154f // Wheel size (m)
+#define GEAR_RATIO  0.714f // Ratio from the motor to the wheel
 #define Max_RPM  3000.0f // motor speed at 100% speed (guess from aliexpress listing, this needs to be calculated)
 
 #define ENCODER_CPR        100       // counts per motor shaft rev (A or B channel edges before x4)
@@ -49,8 +49,8 @@
 #define CTRL_DT            (1.0f/CTRL_HZ)
 
 // PI gains (start conservative; tune on robot)
-#define KP                 0.2f
-#define KI                 5.0f
+#define KP                 0.4f
+#define KI                 8.0f
 #define KD                 0.0f       // optional; start at 0
 
 // PWM output limit (percent)
@@ -290,14 +290,14 @@ float counts_to_wheel_mps(int32_t delta_counts)
 // Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
 void Motor_SetSpeed_L(float v)
 {
-	uint16_t speed = 1500 * v;
+	uint16_t speed = 1500 - (v*100);
 	if (speed > 1700) speed = 1700;
 	if (speed < 1300) speed = 1300;
 	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, speed);
 }
 void Motor_SetSpeed_R(float v)
 {
-	uint16_t speed =  1500 * v;
+	uint16_t speed =  1500 + (v*100);
 	if (speed > 1700) speed = 1700;
 	if (speed < 1300) speed = 1300;
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, speed);
@@ -349,8 +349,8 @@ void Control_Update(void)
 	float uL = KP * eL + i_term_L;
 	float uR = KP * eR + i_term_R;
 
-	Motor_SetSpeed_L(1.0f + 0.025f);
-	Motor_SetSpeed_R(1.0f + 0.025f);
+	Motor_SetSpeed_L(desired_speed_L + uL);
+	Motor_SetSpeed_R(desired_speed_R + uR);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
