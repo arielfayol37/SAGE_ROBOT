@@ -129,7 +129,16 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   exec bash
 '"
 
-# 12) Nav2
+# 12) Direction of arrival server
+tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
+  cd $HOME/Desktop/SAGE_ROBOT/speech
+  python doa_server.py || { echo DOA server failed; sleep 5; }
+  exec bash
+'"
+
+
+
+# 13) Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
