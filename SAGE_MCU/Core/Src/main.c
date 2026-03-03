@@ -87,6 +87,7 @@
 
 #define CMD_TIMEOUT_MS          550U   // if no valid cmd for 250ms -> ramp to stop
 #define RX_PAYLOAD_TIMEOUT_MS   200U   // if header received but payload not completed in 50ms -> resync
+#define UART_TX_TIMEOUT_MS      5U     // keep control loop responsive under serial backpressure
 
 
 /* USER CODE END PD */
@@ -323,13 +324,15 @@ int32_t encoder_delta_counts(TIM_HandleTypeDef *ht, int32_t *prev_accum)
 	return diff;
 }
 
-float counts_to_wheel_mps(int32_t delta_counts)
+float counts_to_wheel_mps(int32_t delta_counts, float dt_s)
 {
+	if (dt_s <= 0.0001f) dt_s = CTRL_DT;
+
 	// Motor revs during dt
 	float motor_revs = (float)delta_counts / (float)ENCODER_COUNTS_PER_MOTOR_REV;
 	float wheel_revs = motor_revs / GEAR_RATIO;
 
-	float wheel_rps  = wheel_revs / CTRL_DT;
+	float wheel_rps  = wheel_revs / dt_s;
 	float circumference = (float)M_PI * WHEEL_DIAMETER;
 
 	return -wheel_rps * circumference;  // m/s
@@ -364,8 +367,18 @@ void Robot_Set_Velocity(float v_in, float w_in)
 
 void Control_Update(void)
 {
-    // --- Apply command timeout: if no recent UART cmd, force cmd_v/cmd_w to 0
+    static uint32_t last_ctrl_ms = 0;
+
     uint32_t now_ms = HAL_GetTick();
+    float dt = CTRL_DT;
+    if (last_ctrl_ms != 0) {
+        uint32_t dms = now_ms - last_ctrl_ms;
+        dt = (float)dms * 0.001f;
+        dt = clampf(dt, 0.001f, 0.050f);
+    }
+    last_ctrl_ms = now_ms;
+
+    // --- Apply command timeout: if no recent UART cmd, force cmd_v/cmd_w to 0
     float local_cmd_v = cmd_v;
     float local_cmd_w = cmd_w;
 
@@ -379,7 +392,7 @@ void Control_Update(void)
     float target_R = local_cmd_v + (local_cmd_w * Lw / 2.0f);
 
     // Slew-limit desired wheel speeds so stopping is gradual
-    const float max_dv = MAX_ACCEL_MPS2 * CTRL_DT; // m/s per control tick
+    const float max_dv = MAX_ACCEL_MPS2 * dt; // m/s per control tick
 
     float stepL = clampf(target_L - desired_speed_L, -max_dv, +max_dv);
     float stepR = clampf(target_R - desired_speed_R, -max_dv, +max_dv);
@@ -391,18 +404,18 @@ void Control_Update(void)
     int32_t dL = encoder_delta_counts(&htim4, &enc_prev_L);
     int32_t dR = -encoder_delta_counts(&htim3, &enc_prev_R);
 
-    float vL_meas = counts_to_wheel_mps(dL); // m/s
-    float vR_meas = counts_to_wheel_mps(dR); // m/s
+    float vL_meas = counts_to_wheel_mps(dL, dt); // m/s
+    float vR_meas = counts_to_wheel_mps(dR, dt); // m/s
 
     float v_robot = (vL_meas + vR_meas) / 2.0f; // m/s
     float w_robot = (vR_meas - vL_meas) / Lw;   // rad/s
 
     // Integrate to update position and orientation
-    robot_Theta += w_robot * CTRL_DT;
+    robot_Theta += w_robot * dt;
     robot_Theta = fmodf(robot_Theta, 2.0f * (float)M_PI);
 
-    robot_X += v_robot * cosf(robot_Theta) * CTRL_DT;
-    robot_Y += v_robot * sinf(robot_Theta) * CTRL_DT;
+    robot_X += v_robot * cosf(robot_Theta) * dt;
+    robot_Y += v_robot * sinf(robot_Theta) * dt;
 
     // These are MEASURED (used for odom TX)
     v = v_robot;
@@ -413,8 +426,13 @@ void Control_Update(void)
     float eR = desired_speed_R - vR_meas;
 
     // PI control
-    i_term_L += KI * eL * CTRL_DT;
-    i_term_R += KI * eR * CTRL_DT;
+    i_term_L += KI * eL * dt;
+    i_term_R += KI * eR * dt;
+
+    if ((fabsf(local_cmd_v) < 0.01f) && (fabsf(local_cmd_w) < 0.01f)) {
+        i_term_L *= 0.98f;
+        i_term_R *= 0.98f;
+    }
     i_term_L = clampf(i_term_L, -0.5f, 0.5f);
     i_term_R = clampf(i_term_R, -0.5f, 0.5f);
 
@@ -481,7 +499,7 @@ static void TX_Odom(void)
 	memcpy(&buf[3 + 12], &v, 4);
 	memcpy(&buf[3 + 16], &w, 4);
 
-	HAL_UART_Transmit(&huart2, buf, sizeof(buf), HAL_MAX_DELAY);
+	(void)HAL_UART_Transmit(&huart2, buf, sizeof(buf), UART_TX_TIMEOUT_MS);
 }
 
 static void TX_Imu(const IMU_Data_t* d)
@@ -498,7 +516,7 @@ static void TX_Imu(const IMU_Data_t* d)
 	memcpy(&buf[3 + 16], &d->ay, 4);
 	memcpy(&buf[3 + 20], &d->az, 4);
 
-	HAL_UART_Transmit(&huart2, buf, sizeof(buf), HAL_MAX_DELAY);
+	(void)HAL_UART_Transmit(&huart2, buf, sizeof(buf), UART_TX_TIMEOUT_MS);
 }
 
 void Control_Packet(uint8_t Control_Byte)

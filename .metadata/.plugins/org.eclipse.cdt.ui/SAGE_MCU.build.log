@@ -1,10 +1,10 @@
-21:14:25 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+12:52:13 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-size  SAGE_MCU.elf 
    text	   data	    bss	    dec	    hex	filename
-  62716	    468	   2516	  65700	  100a4	SAGE_MCU.elf
+  63048	    468	   2524	  66040	  101f8	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 
-21:14:26 Build Finished. 0 errors, 0 warnings. (took 385ms)
+12:52:13 Build Finished. 0 errors, 0 warnings. (took 315ms)
 
