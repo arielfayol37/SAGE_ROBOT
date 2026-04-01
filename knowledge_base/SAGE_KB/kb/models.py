@@ -1,5 +1,6 @@
 from django.db import models
 from pgvector.django import VectorField
+from django.contrib.postgres.search import SearchVectorField
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 import os
@@ -48,14 +49,15 @@ class Chunk(models.Model):
     page = models.IntegerField(blank=True, null=True)
 
     text = models.TextField()
-    embedding = VectorField(dimensions=int(os.getenv("KB_EMBED_DIM", "1536")))
+    search_text = models.TextField(blank=True)
+    embedding = VectorField(dimensions=1536)
+    search_vector = SearchVectorField(null=True)
 
     class Meta:
         unique_together = [("source", "chunk_index")]
         indexes = [
             models.Index(fields=["source"]),
         ]
-
     def __str__(self):
         return f"Chunk {self.source_id}:{self.chunk_index}"
 

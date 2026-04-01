@@ -463,8 +463,9 @@ def process_by_llm_streaming(messages, tools, max_depth=3):
     """
     depth = 0
     try:
-        ui.thinking()
+        
         while True:
+            ui.thinking()
             if tts.is_playing():
                 if VERBOSE_TTS:
                     log("⏹️  TTS stop (new LLM pass)")
@@ -665,7 +666,7 @@ if __name__ == "__main__":
     if USE_WAKEWORD:
         recorder_kwargs.update(
             wakeword_backend=["pvporcupine", "openwakeword"][1],
-            openwakeword_model_paths="assets/models/wakeword/sage_wakeword_2.onnx",
+            openwakeword_model_paths=["assets/models/wakeword/fara_day_best_available.onnx","assets/models/wakeword/sage_wakeword_2.onnx"][1],
             openwakeword_inference_framework="onnx",
             wake_words_sensitivity=0.3,      # lower makes it more sensitive
             wake_word_buffer_duration=0.2,  # 0.75-1s to keep "sage" out of transcript
