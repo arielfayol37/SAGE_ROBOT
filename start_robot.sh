@@ -28,15 +28,22 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   exec bash
 '"
 
+# 1) Valpo KB Server
+tmux new-window -t "$SESSION" -n "Valpo KB" "bash -lc '
+  cd $HOME/Desktop/SAGE_ROBOT/knowledge_base
+  docker compose up -d || { echo Valpo KB server failed; sleep 5; }
+  exec bash
+'"
 
-# 0) Camera
+
+# 2) Camera
 tmux new-window -t "$SESSION" -n "Camera" "bash -lc '
   source $ROS_SETUP || true
   ros2 run v4l2_camera v4l2_camera_node --ros-args -p image_size:=[480,270] || { echo Camera failed; sleep 5; }
   exec bash
 '"
 
-# 1) Video Server
+# 3) Video Server
 tmux new-window -t "$SESSION" -n "Video Server" "bash -lc '
   source $ROS_SETUP || true
   ros2 run web_video_server web_video_server || { echo web_video_server failed; sleep 5; }
@@ -51,21 +58,21 @@ tmux new-window -t "$SESSION" -n "Web Bridge" "bash -lc '
   exec bash
 '"
 
-# 2) Teleop Inteface :8001 
+# 5) Teleop Inteface :8001 
 tmux new-window -t "$SESSION" -n "Teleop Web" "bash -lc '
   cd $HOME/Desktop/SAGE_ROBOT/interface/teleop_interface
   /usr/bin/python3 -m http.server 8001 || { echo teleop interface failed; sleep 5; }
   exec bash
 '"
 
-# 3) Status Interface: 8080
+# 6) Status Interface: 8080
 tmux new-window -t "$SESSION" -n "Status Web" "bash -lc '
   cd $HOME/Desktop/SAGE_ROBOT/interface/status_interface
   npx vite || { echo status interface failed; sleep 5; }
   exec bash
 '"
 
-# 5) Serial Bridge
+# 7) Serial Bridge
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -73,7 +80,7 @@ tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   exec bash
 '"
 
-# 6) EKF (odom filter)
+# 8) EKF (odom filter)
 tmux new-window -t "$SESSION" -n "EKF (odom filter)" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -92,7 +99,7 @@ tmux new-window -t "$SESSION" -n "EKF (odom filter)" "bash -lc '
   exec bash
 '"
 
-# 7) Lidar Scan publisher
+# 9) Lidar Scan publisher
 tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -100,7 +107,7 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   exec bash
 '"
 
-# Speech
+# 10) Speech
 tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -112,7 +119,7 @@ tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
 '"
 
 
-# 8) Map Publisher (plus localization)
+# 11) Map Publisher (plus localization)
 tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -122,11 +129,21 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   exec bash
 '"
 
-# 9) Nav2
+# 12) Direction of arrival server
+tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
+  cd $HOME/Desktop/SAGE_ROBOT/speech
+  python doa_server.py || { echo DOA server failed; sleep 5; }
+  exec bash
+'"
+
+
+
+# 13) Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   ros2 launch nav2_bringup navigation_launch.py params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml use_sim_time:=false map_subscribe_transient_local:=true || { echo nav2 failed; sleep 5; }
   exec bash
 '"
+
 

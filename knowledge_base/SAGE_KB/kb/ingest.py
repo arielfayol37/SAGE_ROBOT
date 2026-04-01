@@ -112,7 +112,9 @@ def ingest_source(source_id: int) -> None:
                         source=src,
                         chunk_index=idx,
                         page=c["page"],
+			section=c.get("section", ""),
                         text=c["text"],
+			search_text=f"Title: {src.title or ''}\nSection: {c.get('section', '') or ''}\nPage: {c['page'] or ''}\nContent: {c['text']}",
                         embedding=emb,
                     )
                 )
