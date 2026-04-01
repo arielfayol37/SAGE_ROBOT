@@ -43,7 +43,7 @@ class TTSConfig:
 @dataclass(frozen=True, slots=True)
 class STTConfig:
     language:             str  = "en"
-    whisper_model:        str  = "tiny.en"
+    whisper_model:        str  = "small.en"
     use_wakeword:         bool = True
     wakeword_backend:     str  = "openwakeword"
     wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx"
