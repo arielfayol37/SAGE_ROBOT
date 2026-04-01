@@ -43,7 +43,7 @@ class TTSConfig:
 @dataclass(frozen=True, slots=True)
 class STTConfig:
     language:             str  = "en"
-    whisper_model:        str  = "small.en"
+    whisper_model:        str  = "tiny.en"
     use_wakeword:         bool = True
     wakeword_backend:     str  = "openwakeword"
     wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx"
@@ -78,6 +78,17 @@ class EndpointsConfig:
 
 
 # ---------------------------------------------------------------------------
+# Web push-to-talk
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class WebConfig:
+    enabled:  bool = True
+    host:     str  = "0.0.0.0"
+    port:     int  = 8005
+
+
+# ---------------------------------------------------------------------------
 # Top-level aggregate
 # ---------------------------------------------------------------------------
 
@@ -88,6 +99,7 @@ class AppConfig:
     stt:       STTConfig       = field(default_factory=STTConfig)
     llm:       LLMConfig       = field(default_factory=LLMConfig)
     endpoints: EndpointsConfig = field(default_factory=EndpointsConfig)
+    web:       WebConfig       = field(default_factory=WebConfig)
 
     @classmethod
     def from_env(cls) -> "AppConfig":

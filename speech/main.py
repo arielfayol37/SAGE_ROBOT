@@ -32,6 +32,7 @@ from streaming import run_conversation_turn
 from tools import ToolRegistry, build_tool_schemas
 from ui_state_client import UIStatePublisher
 from utils import read_openai_key, play_wav
+from web_ptt import PushToTalkServer
 
 _log = logger.get("general")
 
@@ -116,6 +117,10 @@ class SageApp:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         _log.info("Whisper device: %s", device)
 
+        # Start web push-to-talk server
+        self.ptt_server = PushToTalkServer(self, device=device)
+        self.ptt_server.start()
+
         self._init_recorder(device)
         _log.info("Ready to guide tours with streaming TTS")
 
@@ -140,8 +145,11 @@ class SageApp:
     # Input processing
     # ==================================================================
 
-    def _process_user_input(self, text: str) -> None:
-        """Add user message, trim history, and run an LLM turn."""
+    def _process_user_input(self, text: str) -> str:
+        """Add user message, trim history, and run an LLM turn.
+
+        Returns the assistant's reply text.
+        """
         max_history = self.cfg.llm.max_history_len
 
         with self._messages_lock:
@@ -163,6 +171,8 @@ class SageApp:
                 config=self.cfg.llm,
             )
             _log.info("AI🤖: %s", reply)
+
+        return reply
 
     # ==================================================================
     # Event / arrival handling
