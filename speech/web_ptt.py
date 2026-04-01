@@ -3,14 +3,14 @@ Push-to-talk web interface for SAGE (default port 8005).
 
 Serves a mobile-friendly hold-to-talk page.  Audio is recorded in the
 browser via MediaRecorder, POSTed as WebM, converted to 16 kHz mono
-WAV by ffmpeg, and transcribed locally with faster_whisper — the same
+WAV by ffmpeg, and transcribed locally with faster_whisper  the same
 engine the on-robot STT uses.  The transcribed text is then fed into
 the normal SAGE LLM pipeline so the robot responds via TTS.
 
 Dependencies (all already present on the robot):
     pip install fastapi uvicorn faster-whisper soundfile numpy
 
-Start-up is handled by SageApp — see ``main.py``.
+Start-up is handled by SageApp  see ``main.py``.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import os
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -66,7 +68,7 @@ def _get_whisper_model(model_name: str, device: str) -> Any:
 
 
 def _audio_bytes_to_float32(audio_bytes: bytes) -> Optional[np.ndarray]:
-    """Convert browser audio (webm/opus/ogg/wav) → 16 kHz float32 mono.
+    """Convert browser audio (webm/opus/ogg/wav) � 16 kHz float32 mono.
 
     Uses ffmpeg for format conversion, which handles every codec the
     browser might produce.
@@ -95,7 +97,7 @@ def _audio_bytes_to_float32(audio_bytes: bytes) -> Optional[np.ndarray]:
         return audio
 
     except FileNotFoundError:
-        _log.error("ffmpeg not found — install it: sudo apt install ffmpeg")
+        _log.error("ffmpeg not found  install it: sudo apt install ffmpeg")
         return None
     except Exception:
         _log.exception("Audio conversion error")
@@ -128,7 +130,7 @@ def create_app(sage_app: Any, device: str = "cpu") -> FastAPI:
         The running :class:`main.SageApp` instance (used to inject
         transcribed text into ``_process_user_input``).
     device:
-        ``"cuda"`` or ``"cpu"`` — passed to faster_whisper.
+        ``"cuda"`` or ``"cpu"``  passed to faster_whisper.
     """
     api = FastAPI(title="SAGE Push-to-Talk", docs_url=None, redoc_url=None)
     whisper_model_name = sage_app.cfg.stt.whisper_model
@@ -153,7 +155,7 @@ def create_app(sage_app: Any, device: str = "cpu") -> FastAPI:
                 {"error": "Audio too short"}, status_code=400,
             )
 
-        # Convert to float32 (blocking I/O → run in thread)
+        # Convert to float32 (blocking I/O � run in thread)
         loop = asyncio.get_event_loop()
         samples = await loop.run_in_executor(None, _audio_bytes_to_float32, raw)
         if samples is None:
@@ -188,11 +190,56 @@ def create_app(sage_app: Any, device: str = "cpu") -> FastAPI:
 
 
 # ======================================================================
+# Self-signed certificate (auto-generated once)
+# ======================================================================
+
+_CERT_DIR = Path.home() / ".sage" / "certs"
+_CERT_FILE = _CERT_DIR / "sage-ptt.pem"
+_KEY_FILE  = _CERT_DIR / "sage-ptt-key.pem"
+
+
+def _ensure_ssl_cert() -> tuple[str, str]:
+    """Generate a self-signed cert + key if they don't already exist.
+
+    Returns ``(cert_path, key_path)``.  The cert is valid for 365 days
+    and covers any IP on the local network.
+    """
+    if _CERT_FILE.exists() and _KEY_FILE.exists():
+        _log.debug("Reusing existing SSL cert: %s", _CERT_FILE)
+        return str(_CERT_FILE), str(_KEY_FILE)
+
+    _CERT_DIR.mkdir(parents=True, exist_ok=True)
+
+    _log.info("Generating self-signed SSL certificate for web PTT&")
+    subprocess.run(
+        [
+            "openssl", "req", "-x509",
+            "-newkey", "rsa:2048",
+            "-keyout", str(_KEY_FILE),
+            "-out", str(_CERT_FILE),
+            "-days", "365",
+            "-nodes",                    # no passphrase
+            "-subj", "/CN=SAGE-Robot",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    _log.info("SSL certificate written to %s", _CERT_DIR)
+    return str(_CERT_FILE), str(_KEY_FILE)
+
+
+# ======================================================================
 # Background server runner
 # ======================================================================
 
 class PushToTalkServer:
-    """Wraps uvicorn so the web server can be started in a daemon thread."""
+    """Wraps uvicorn so the web server can be started in a daemon thread.
+
+    Serves over HTTPS with an auto-generated self-signed certificate so
+    that browsers allow microphone access from non-localhost origins.
+    On first connect the phone will show a "not secure" warning  tap
+    "Advanced � Proceed" once and it will be remembered.
+    """
 
     def __init__(self, sage_app: Any, device: str = "cpu") -> None:
         self._sage_app = sage_app
@@ -205,11 +252,15 @@ class PushToTalkServer:
             _log.info("Web PTT server disabled in config")
             return
 
+        cert_path, key_path = _ensure_ssl_cert()
+
         app = create_app(self._sage_app, device=self._device)
         uvi_cfg = uvicorn.Config(
             app, host=cfg.host, port=cfg.port,
             log_level="warning",
             access_log=False,
+            ssl_certfile=cert_path,
+            ssl_keyfile=key_path,
         )
         server = uvicorn.Server(uvi_cfg)
 
@@ -217,7 +268,11 @@ class PushToTalkServer:
             target=server.run, daemon=True, name="web-ptt",
         )
         self._thread.start()
-        _log.info("Web push-to-talk server on http://%s:%d", cfg.host, cfg.port)
+        _log.info(
+            "Web push-to-talk server on https://%s:%d  "
+            "(accept the self-signed cert warning on first visit)",
+            cfg.host, cfg.port,
+        )
 
 
 # ======================================================================
@@ -252,7 +307,7 @@ body{
   touch-action:manipulation;
 }
 
-/* ── header ── */
+/*  header  */
 .header{
   position:absolute;top:0;left:0;right:0;
   padding:20px 24px;display:flex;align-items:center;gap:12px;
@@ -268,7 +323,7 @@ body{
 }
 @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
 
-/* ── status ── */
+/*  status  */
 .status-bar{
   margin-bottom:48px;text-align:center;
 }
@@ -281,7 +336,7 @@ body{
 .status-text.active{color:var(--accent)}
 .status-text.error{color:var(--danger)}
 
-/* ── mic button ── */
+/*  mic button  */
 .mic-wrap{
   position:relative;width:160px;height:160px;
   display:flex;align-items:center;justify-content:center;
@@ -318,7 +373,7 @@ body{
 }
 .mic-btn.recording svg{stroke:var(--danger)}
 
-/* ── response card ── */
+/*  response card  */
 .response{
   margin-top:48px;width:min(90vw,400px);
   max-height:35vh;overflow-y:auto;
@@ -343,13 +398,13 @@ body{
 .card.sage .card-label{color:var(--success)}
 .card.user .card-label{color:var(--accent)}
 
-/* ── hint ── */
+/*  hint  */
 .hint{
   position:absolute;bottom:32px;
   font-size:.75rem;color:var(--text-dim);letter-spacing:.04em;
 }
 
-/* ── loading dots ── */
+/*  loading dots  */
 .dots span{animation:blink 1.4s infinite both}
 .dots span:nth-child(2){animation-delay:.2s}
 .dots span:nth-child(3){animation-delay:.4s}
@@ -488,7 +543,7 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// ── pointer events (work on both touch + mouse) ──
+//  pointer events (work on both touch + mouse) 
 mic.addEventListener('pointerdown', e => {
   e.preventDefault();
   mic.setPointerCapture(e.pointerId);
@@ -498,7 +553,7 @@ mic.addEventListener('pointerup', async e => {
   e.preventDefault();
   const blob = await stopRecording();
   if (blob && blob.size > 500) send(blob);
-  else setStatus('Too short — hold longer', 'error');
+  else setStatus('Too short  hold longer', 'error');
 });
 mic.addEventListener('pointercancel', async () => {
   await stopRecording();
