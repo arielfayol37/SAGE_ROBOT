@@ -92,16 +92,22 @@ class AppConfig:
     @classmethod
     def from_env(cls) -> "AppConfig":
         """Build config with environment-variable overrides where set."""
+        # Instantiate defaults first — accessing fields on a slotted
+        # frozen dataclass *class* returns descriptors, not values.
+        _llm = LLMConfig()
+        _tts = TTSConfig()
+        _ep  = EndpointsConfig()
+
         return cls(
             llm=LLMConfig(
-                model=os.getenv("SAGE_LLM_MODEL", LLMConfig.model),
-                api_key_path=os.getenv("SAGE_API_KEY_PATH", LLMConfig.api_key_path),
+                model=os.getenv("SAGE_LLM_MODEL", _llm.model),
+                api_key_path=os.getenv("SAGE_API_KEY_PATH", _llm.api_key_path),
             ),
             tts=TTSConfig(
-                model_path=os.getenv("SAGE_TTS_MODEL", TTSConfig.model_path),
-                aplay_device=os.getenv("SAGE_APLAY_DEVICE", TTSConfig.aplay_device),
+                model_path=os.getenv("SAGE_TTS_MODEL", _tts.model_path),
+                aplay_device=os.getenv("SAGE_APLAY_DEVICE", _tts.aplay_device),
             ),
             endpoints=EndpointsConfig(
-                kb_search=os.getenv("SAGE_KB_URL", EndpointsConfig.kb_search),
+                kb_search=os.getenv("SAGE_KB_URL", _ep.kb_search),
             ),
         )

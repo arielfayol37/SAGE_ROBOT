@@ -30,6 +30,7 @@ def setup(cfg: LoggingConfig) -> None:
 
     root = logging.getLogger("sage")
     root.setLevel(logging.DEBUG)
+    root.propagate = False  # prevent bubbling to Python's root logger
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATE_FMT))
