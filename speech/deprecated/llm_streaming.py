@@ -63,6 +63,10 @@ MODEL_NAME = "gpt-4.1-nano" # gpt-4.1-nano for fastest responses.
 ROBOT_BACKEND_URL = "http://127.0.0.1:8002"
 SEARCH_URL = "http://127.0.0.1:8004/api/kb/search"
 ALSA_DEVICE = "pulse"  # IMPORTANT: go through Pulse/PipeWire
+WAKEWORD_BACKEND = ["pvporcupine", "openwakeword"][1]
+WAKEWORD_MODEL_PATHS = ["assets/models/wakeword/fara_day_best_available.onnx",\
+                        "assets/models/wakeword/sage_wakeword_2.onnx"][1]
+
 # =========================
 # Globals
 # =========================
@@ -665,8 +669,8 @@ if __name__ == "__main__":
 
     if USE_WAKEWORD:
         recorder_kwargs.update(
-            wakeword_backend=["pvporcupine", "openwakeword"][1],
-            openwakeword_model_paths=["assets/models/wakeword/fara_day_best_available.onnx","assets/models/wakeword/sage_wakeword_2.onnx"][1],
+            wakeword_backend=WAKEWORD_BACKEND,
+            openwakeword_model_paths=WAKEWORD_MODEL_PATHS,
             openwakeword_inference_framework="onnx",
             wake_words_sensitivity=0.3,      # lower makes it more sensitive
             wake_word_buffer_duration=0.2,  # 0.75-1s to keep "sage" out of transcript

@@ -1,29 +1,40 @@
-#!/usr/bin/env python3
 """
-ui_state_client.py — minimal helper to publish SAGE UI state for the status interface.
+Minimal helper to publish SAGE UI state over ROS 2.
 
-Publishes JSON strings on /sage/ui_state_json (std_msgs/String), e.g.:
-  {"phase":"speaking","energy":0.42,"viseme":7}
+Publishes JSON on ``/sage/ui_state_json`` (``std_msgs/String``)::
 
-Phases: 'idle'|'listening'|'thinking'|'speaking'|'searching'|'error'
-Only include what's needed to drive animations. No transcript text here.
+    {"phase":"speaking","energy":0.42,"viseme":7}
+
+Phases: ``idle | listening | thinking | speaking | searching | error``
 """
 
 from __future__ import annotations
-import json, time, threading
-from typing import Optional, Literal, Dict
+
+import json
+import logging
+import threading
+import time
+from typing import Any, Dict, Literal, Optional
 
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from std_msgs.msg import String as RosString
 
-Phase = Literal['idle','listening','thinking','speaking','searching','error']
+_log = logging.getLogger("sage.ui")
+
+Phase = Literal["idle", "listening", "thinking", "speaking", "searching", "error"]
+
 
 class _UIStateNode(Node):
-    def __init__(self, topic: str):
-        super().__init__('sage_ui_state_client')
+    def __init__(self, topic: str) -> None:
+        super().__init__("sage_ui_state_client")
         qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
@@ -32,24 +43,29 @@ class _UIStateNode(Node):
         )
         self.pub = self.create_publisher(RosString, topic, qos)
 
-class UIStatePublisher:
-    """
-    Usage:
-        ui = UIStatePublisher()                  # starts a tiny ROS2 node in background
-        ui.set_phase('listening')
-        ui.set_phase('thinking')
-        ui.set_phase('speaking')
-        ui.speaking_energy(0.35)                # call at ~10-30 Hz if you want
-        ui.set_phase('idle')
-        ui.close()                               # optional (on program exit)
-    """
-    def __init__(self, topic: str = "/sage/ui_state_json",
-                 energy_hz_max: float = 20.0):
-        self._topic = topic
-        self._energy_min_dt = 1.0 / max(1e-6, energy_hz_max)
-        self._last_energy_ts = 0.0
 
-        # ROS2 bring-up (idempotent)
+class UIStatePublisher:
+    """Publish UI phase transitions over a ROS 2 topic.
+
+    Usage::
+
+        ui = UIStatePublisher()
+        ui.listening()
+        ui.thinking()
+        ui.speaking()
+        ui.idle()
+        ui.close()
+    """
+
+    def __init__(
+        self,
+        topic: str = "/sage/ui_state_json",
+        energy_hz_max: float = 20.0,
+    ) -> None:
+        self._energy_min_dt = 1.0 / max(1e-6, energy_hz_max)
+        self._last_energy_ts: float = 0.0
+
+        # Idempotent ROS 2 init
         self._owned_init = False
         if not rclpy.ok():
             rclpy.init()
@@ -59,89 +75,113 @@ class UIStatePublisher:
         self._exec = SingleThreadedExecutor()
         self._exec.add_node(self._node)
 
-        self._spin_thread = threading.Thread(target=self._exec.spin, daemon=True)
+        self._spin_thread = threading.Thread(
+            target=self._exec.spin, daemon=True, name="ui-state-spin",
+        )
         self._spin_thread.start()
 
         self._lock = threading.Lock()
-        self._last_phase: Phase = 'idle'
+        self._last_phase: Phase = "idle"
 
-    # ------------- core send -------------
-    def _send(self, payload: Dict):
+    # -- core send -----------------------------------------------------
+
+    def _send(self, payload: Dict[str, Any]) -> None:
         msg = RosString()
-        msg.data = json.dumps(payload, separators=(',', ':'))
-        # publish is threadsafe in rclpy; guard anyway to order messages
+        msg.data = json.dumps(payload, separators=(",", ":"))
         with self._lock:
             self._node.pub.publish(msg)
 
-    def _now(self) -> float:
-        return time.time()
+    # -- public API ----------------------------------------------------
 
-    # ------------- public API -------------
+    @property
+    def last_phase(self) -> Phase:
+        return self._last_phase
 
-    def set_phase(self, phase: Phase, *, error: Optional[str] = None, viseme: Optional[int] = None):
-        """Set the current UI phase; include optional one-off hints."""
+    def set_phase(
+        self,
+        phase: Phase,
+        *,
+        error: Optional[str] = None,
+        viseme: Optional[int] = None,
+    ) -> None:
+        """Set the current UI phase with optional one-off hints."""
         self._last_phase = phase
-        data: Dict = {"phase": phase}
+        data: Dict[str, Any] = {"phase": phase}
         if viseme is not None:
             data["viseme"] = int(viseme)
-        if phase == 'error' and error:
-            # Keep it minimal; hub/face can flash error animation without text
+        if phase == "error" and error:
             data["err"] = True
         self._send(data)
 
     # Convenience shorthands
-    def idle(self):       self.set_phase('idle')
-    def listening(self):  self.set_phase('listening')
-    def thinking(self):   self.set_phase('thinking')
-    def speaking(self):   self.set_phase('speaking')
-    def searching(self):  self.set_phase('searching')
-    def error(self):      self.set_phase('error')
+    def idle(self) -> None:
+        self.set_phase("idle")
 
-    def speaking_energy(self, energy: float, *, viseme: Optional[int] = None):
-        """
-        Send energy (0..1) and optional viseme while in 'speaking'.
-        Throttled to energy_hz_max to avoid spamming.
-        """
-        now = self._now()
+    def listening(self) -> None:
+        self.set_phase("listening")
+
+    def thinking(self) -> None:
+        self.set_phase("thinking")
+
+    def speaking(self) -> None:
+        self.set_phase("speaking")
+
+    def searching(self) -> None:
+        self.set_phase("searching")
+
+    def error(self) -> None:
+        self.set_phase("error")
+
+    def speaking_energy(self, energy: float, *, viseme: Optional[int] = None) -> None:
+        """Send energy (0…1) while speaking.  Rate-limited."""
+        now = time.time()
         if (now - self._last_energy_ts) < self._energy_min_dt:
             return
         self._last_energy_ts = now
-        e = max(0.0, min(1.0, float(energy)))
-        payload: Dict = {"phase": "speaking", "energy": e}
+        payload: Dict[str, Any] = {
+            "phase": "speaking",
+            "energy": max(0.0, min(1.0, float(energy))),
+        }
         if viseme is not None:
             payload["viseme"] = int(viseme)
         self._send(payload)
 
-    # Optional context managers for clean phase lifetimes
-    def phase_scope(self, phase: Phase):
-        """with ui.phase_scope('thinking'): ..."""
-        class _Scope:
-            def __init__(s, outer: UIStatePublisher, p: Phase):
-                s._outer = outer; s._p = p
-            def __enter__(s):
-                s._outer.set_phase(s._p)
-            def __exit__(s, exc_type, exc, tb):
-                # if we were thinking/searching, default back to idle
-                if s._p in ('thinking','searching','listening','speaking'):
-                    s._outer.idle()
-        return _Scope(self, phase)
+    def phase_scope(self, phase: Phase) -> "_PhaseScope":
+        """Context manager: ``with ui.phase_scope('thinking'): …``"""
+        return _PhaseScope(self, phase)
 
-    def close(self):
-        """Clean shutdown (optional if process is exiting)."""
-        try:
-            self._exec.remove_node(self._node)
-        except Exception:
-            pass
-        try:
-            self._node.destroy_node()
-        except Exception:
-            pass
-        try:
-            self._exec.shutdown()
-        except Exception:
-            pass
+    def close(self) -> None:
+        """Clean shutdown (optional if the process is exiting)."""
+        for action in (
+            lambda: self._exec.remove_node(self._node),
+            lambda: self._node.destroy_node(),
+            lambda: self._exec.shutdown(),
+        ):
+            try:
+                action()
+            except Exception:
+                pass
         if self._owned_init and rclpy.ok():
             try:
                 rclpy.shutdown()
             except Exception:
                 pass
+
+
+class _PhaseScope:
+    """RAII-style phase lifetime helper."""
+
+    _TRANSIENT_PHASES: frozenset[Phase] = frozenset(
+        {"thinking", "searching", "listening", "speaking"}
+    )
+
+    def __init__(self, publisher: UIStatePublisher, phase: Phase) -> None:
+        self._pub = publisher
+        self._phase = phase
+
+    def __enter__(self) -> None:
+        self._pub.set_phase(self._phase)
+
+    def __exit__(self, *_: object) -> None:
+        if self._phase in self._TRANSIENT_PHASES:
+            self._pub.idle()

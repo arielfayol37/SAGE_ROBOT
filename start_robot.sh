@@ -113,7 +113,7 @@ tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
   source $WS_SETUP || true
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
   cd \$HOME/Desktop/SAGE_ROBOT/speech
-  \$HOME/Desktop/SAGE_ROBOT/.venv/bin/python llm_streaming.py \
+  \$HOME/Desktop/SAGE_ROBOT/.venv/bin/python main.py \
     || { echo speech failed; sleep 5; }
   exec bash
 '"
