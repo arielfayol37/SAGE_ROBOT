@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAGE — Service Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #12151c;
+    --surface-hover: #1a1e28;
+    --border: #1e2330;
+    --border-hover: #2a3040;
+    --text: #e2e4ea;
+    --text-dim: #6b7280;
+    --accent-teleop: #3b82f6;
+    --accent-face: #f472b6;
+    --accent-admin: #34d399;
+    --accent-voice: #fbbf24;
+    --glow-teleop: rgba(59, 130, 246, 0.12);
+    --glow-face: rgba(244, 114, 182, 0.12);
+    --glow-admin: rgba(52, 211, 153, 0.12);
+    --glow-voice: rgba(251, 191, 36, 0.12);
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Subtle animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: gridDrift 20s linear infinite;
+    pointer-events: none;
+  }
+
+  @keyframes gridDrift {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(60px, 60px); }
+  }
+
+  /* Top-left subtle radial glow */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -30%;
+    left: -10%;
+    width: 60vw;
+    height: 60vw;
+    background: radial-gradient(circle, rgba(59,130,246,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 820px;
+    padding: 2rem;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 3rem;
+    animation: fadeUp 0.6s ease-out both;
+  }
+
+  .header__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 0.4rem 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .header__badge .dot {
+    width: 6px;
+    height: 6px;
+    background: #34d399;
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2.75rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.5rem;
+  }
+
+  .header h1 span {
+    background: linear-gradient(135deg, #e2e4ea 40%, #6b7280 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .header p {
+    color: var(--text-dim);
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  /* Service cards grid */
+  .services {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  @media (max-width: 600px) {
+    .services { grid-template-columns: 1fr; }
+    .header h1 { font-size: 2rem; }
+  }
+
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.25s ease;
+    cursor: pointer;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+
+  .card:hover {
+    border-color: var(--border-hover);
+    background: var(--surface-hover);
+    transform: translateY(-2px);
+  }
+
+  .card:hover::before { opacity: 1; }
+
+  .card:active { transform: translateY(0); }
+
+  /* Per-card glow colors */
+  .card--teleop::before { background: var(--glow-teleop); }
+  .card--face::before   { background: var(--glow-face); }
+  .card--admin::before  { background: var(--glow-admin); }
+  .card--voice::before  { background: var(--glow-voice); }
+
+  .card__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .card__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .card--teleop .card__icon { background: rgba(59,130,246,0.1); color: var(--accent-teleop); }
+  .card--face .card__icon   { background: rgba(244,114,182,0.1); color: var(--accent-face); }
+  .card--admin .card__icon  { background: rgba(52,211,153,0.1); color: var(--accent-admin); }
+  .card--voice .card__icon  { background: rgba(251,191,36,0.1); color: var(--accent-voice); }
+
+  .card__port {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.04);
+    border-radius: 6px;
+    padding: 0.25rem 0.6rem;
+    letter-spacing: 0.04em;
+  }
+
+  .card__body h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+
+  .card__body p {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+
+  .card__arrow {
+    position: absolute;
+    bottom: 1.25rem;
+    right: 1.25rem;
+    width: 24px;
+    height: 24px;
+    opacity: 0;
+    transform: translate(-4px, 4px);
+    transition: all 0.25s ease;
+    color: var(--text-dim);
+  }
+
+  .card:hover .card__arrow {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 2.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    animation: fadeUp 0.6s 0.4s ease-out both;
+  }
+
+  .footer span { opacity: 0.5; }
+
+  /* Staggered card animations */
+  .card:nth-child(1) { animation: fadeUp 0.5s 0.08s ease-out both; }
+  .card:nth-child(2) { animation: fadeUp 0.5s 0.14s ease-out both; }
+  .card:nth-child(3) { animation: fadeUp 0.5s 0.20s ease-out both; }
+  .card:nth-child(4) { animation: fadeUp 0.5s 0.26s ease-out both; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header class="header">
+    <div class="header__badge"><span class="dot"></span> System Online</div>
+    <h1><span>SAGE</span></h1>
+    <p>Select a service to continue</p>
+  </header>
+
+  <div class="services" id="services">
+    <!-- Cards injected by JS so hrefs use the actual hostname -->
+  </div>
+
+  <footer class="footer">
+    <span>Hosted at </span><span id="host-display"></span>
+  </footer>
+</div>
+
+<script>
+  const host = window.location.hostname;
+  document.getElementById('host-display').textContent = host;
+
+  const services = [
+    {
+      id: 'teleop',
+      name: 'Teleop',
+      desc: 'Remote teleoperation control interface',
+      port: 8001,
+      path: '',
+      proto: 'http',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>`
+    },
+    {
+      id: 'face',
+      name: 'Face Display',
+      desc: 'User experience &amp; expression interface',
+      port: 8002,
+      path: '',
+      proto: 'http',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>`
+    },
+    {
+      id: 'admin',
+      name: 'Knowledge Base',
+      desc: 'Upload &amp; manage documents via admin panel',
+      port: 8004,
+      path: '/admin',
+      proto: 'http',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`
+    },
+    {
+      id: 'voice',
+      name: 'Voice Recording',
+      desc: 'Secure audio capture service (SSL)',
+      port: 8005,
+      path: '',
+      proto: 'https',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`
+    }
+  ];
+
+  const grid = document.getElementById('services');
+
+  services.forEach(s => {
+    const url = `${s.proto}://${host}:${s.port}${s.path}`;
+    const card = document.createElement('a');
+    card.href = url;
+    card.className = `card card--${s.id}`;
+    card.innerHTML = `
+      <div class="card__top">
+        <div class="card__icon">${s.icon}</div>
+        <span class="card__port">:${s.port}${s.path}</span>
+      </div>
+      <div class="card__body">
+        <h2>${s.name}</h2>
+        <p>${s.desc}</p>
+      </div>
+      <svg class="card__arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+    `;
+    grid.appendChild(card);
+  });
+</script>
+
+</body>
+</html>
