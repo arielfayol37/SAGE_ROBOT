@@ -88,6 +88,7 @@ class SageApp:
             nav=self.nav,
             ui=self.ui,
             endpoints=self.cfg.endpoints,
+            api_key_path=self.cfg.llm.api_key_path,
         )
 
         # -- Event dispatcher (needs tool_registry) --------------------
@@ -136,7 +137,7 @@ class SageApp:
             if not user_input:
                 continue
 
-            _log.info("User👤: %s", user_input)
+            _log.info("User: %s", user_input)
             self._process_user_input(user_input)
 
         self._teardown()
@@ -170,7 +171,7 @@ class SageApp:
                 ui=self.ui,
                 config=self.cfg.llm,
             )
-            _log.info("AI🤖: %s", reply)
+            _log.info("AI: %s", reply)
 
         return reply
 

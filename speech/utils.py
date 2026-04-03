@@ -13,34 +13,56 @@ from typing import Optional
 _log = logging.getLogger("sage.general")
 
 
+def read_api_key(
+    json_path: str,
+    field: str,
+    env_var: Optional[str] = None,
+) -> Optional[str]:
+    """Read an API key from a JSON file, falling back to an env var.
+
+    Parameters
+    ----------
+    json_path:
+        Path to a JSON file mapping service names to keys,
+        e.g. ``{"openai_api_key": "sk-…", "tavily_api_key": "tvly-…"}``.
+    field:
+        The key name to look up inside the JSON object.
+    env_var:
+        Optional environment variable to check as a fallback.
+
+    Returns ``None`` if neither source provides a value.
+    """
+    if os.path.isfile(json_path):
+        try:
+            with open(json_path) as fh:
+                data = json.load(fh)
+            value = data.get(field)
+            if value:
+                return str(value)
+        except (json.JSONDecodeError, OSError) as exc:
+            _log.warning("Could not read %s from %s: %s", field, json_path, exc)
+
+    if env_var:
+        env_value = os.getenv(env_var)
+        if env_value:
+            return env_value
+
+    return None
+
+
 def read_openai_key(json_path: str) -> str:
     """Read the OpenAI API key from a JSON file or ``OPENAI_API_KEY`` env var.
 
-    The JSON file is expected to contain ``{"openai_key": "sk-…"}``.
-    Falls back to the ``OPENAI_API_KEY`` environment variable if the
-    file is missing or unreadable.
+    The JSON file is expected to contain ``{"openai_api_key": "sk-…"}``.
 
     Raises
     ------
     RuntimeError
         If no key can be found from either source.
     """
-    # 1. Try the JSON file
-    if os.path.isfile(json_path):
-        try:
-            with open(json_path) as fh:
-                data = json.load(fh)
-            key = data.get("openai_key")
-            if key:
-                return str(key)
-            _log.warning("%s exists but has no 'openai_key' field", json_path)
-        except (json.JSONDecodeError, OSError) as exc:
-            _log.warning("Could not read %s: %s", json_path, exc)
-
-    # 2. Fallback to environment
-    env_key = os.getenv("OPENAI_API_KEY")
-    if env_key:
-        return env_key
+    key = read_api_key(json_path, "openai_api_key", "OPENAI_API_KEY")
+    if key:
+        return key
 
     raise RuntimeError(
         f"No OpenAI API key found.  Provide it in {json_path} "

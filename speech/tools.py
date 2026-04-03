@@ -10,6 +10,8 @@ Contains:
 from __future__ import annotations
 
 import json
+import socket
+import subprocess
 import threading
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
@@ -100,6 +102,47 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": (
+                    "Search the internet for current information.  Use this "
+                    "for general knowledge questions, recent events, weather, "
+                    "news, or anything NOT specific to Valparaiso University.  "
+                    "Returns a list of result snippets with titles and URLs."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query.",
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Number of results to return.",
+                            "default": 5,
+                            "minimum": 1,
+                            "maximum": 10,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_ip_address",
+                "description": (
+                    "Get the robot's current IP address(es) on the network.  "
+                    "Use when someone asks what the robot's IP is, how to "
+                    "connect to it, or its network address."
+                ),
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
     ]
 
 
@@ -119,10 +162,12 @@ class ToolRegistry:
         nav: NavManager,
         ui: UIStatePublisher,
         endpoints: EndpointsConfig,
+        api_key_path: str = "api_keys/api_keys.json",
     ) -> None:
         self._nav = nav
         self._ui = ui
         self._endpoints = endpoints
+        self._api_key_path = api_key_path
 
         self._lock = threading.Lock()
         self._nav_epoch: int = 0
@@ -132,6 +177,8 @@ class ToolRegistry:
             "set_goal": self.set_goal,
             "cancel_goal": self.cancel_goal,
             "valpo_search": self.valpo_search,
+            "web_search": self.web_search,
+            "get_ip_address": self.get_ip_address,
         }
 
     # -- properties (thread-safe reads) --------------------------------
@@ -231,3 +278,90 @@ class ToolRegistry:
             return json.dumps({"query": query, "results": [], "error": f"KB request failed: {exc}"})
         except ValueError as exc:
             return json.dumps({"query": query, "results": [], "error": f"Invalid JSON from KB: {exc}"})
+
+    def web_search(self, query: str, max_results: int = 5) -> str:
+        """Search the web using Tavily (optimised for LLM consumption).
+
+        Reads the API key from the shared keys file (field:
+        ``tavily_api_key``) or the ``TAVILY_API_KEY`` env var.
+        Free tier: 1,000 searches/month, no credit card needed.
+        Sign up at https://tavily.com
+        """
+        max_results = max(1, min(int(max_results), 10))
+        self._ui.searching()
+
+        try:
+            from tavily import TavilyClient
+        except ImportError:
+            return json.dumps({
+                "query": query,
+                "results": [],
+                "error": "tavily not installed.  Run: pip install tavily-python",
+            })
+
+        from utils import read_api_key
+        api_key = read_api_key(self._api_key_path, "tavily_api_key", "TAVILY_API_KEY")
+        if not api_key:
+            return json.dumps({
+                "query": query,
+                "results": [],
+                "error": (
+                    "No Tavily API key found.  Add \"tavily_api_key\" to "
+                    f"{self._api_key_path} or set TAVILY_API_KEY env var."
+                ),
+            })
+
+        try:
+            client = TavilyClient(api_key=api_key)
+            response = client.search(
+                query=query,
+                max_results=max_results,
+                search_depth="basic",
+            )
+
+            results = [
+                {
+                    "title": r.get("title", ""),
+                    "content": r.get("content", ""),
+                    "url": r.get("url", ""),
+                }
+                for r in response.get("results", [])
+            ]
+            _log.info("Web search '%s' → %d results", query, len(results))
+            return json.dumps({"query": query, "results": results})
+
+        except Exception as exc:
+            _log.exception("Web search failed")
+            return json.dumps({"query": query, "results": [], "error": f"Search failed: {exc}"})
+
+    def get_ip_address(self) -> str:
+        """Return the robot's current IP addresses."""
+        addrs: Dict[str, List[str]] = {}
+
+        # Method 1: parse `hostname -I` (works on Linux, gives all IPs)
+        try:
+            out = subprocess.check_output(
+                ["hostname", "-I"], timeout=2, text=True,
+            ).strip()
+            if out:
+                addrs["all"] = out.split()
+        except Exception:
+            pass
+
+        # Method 2: connect-to-external trick (gives the "default" IP)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                addrs["primary"] = [s.getsockname()[0]]
+        except Exception:
+            pass
+
+        if not addrs:
+            return json.dumps({"error": "Could not determine IP address."})
+
+        # Flatten to a clean response
+        primary = addrs.get("primary", [None])[0]
+        all_ips = addrs.get("all", [])
+        result = {"primary_ip": primary, "all_ips": all_ips}
+        _log.info("IP address query: %s", result)
+        return json.dumps(result)
