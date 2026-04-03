@@ -131,6 +131,7 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
 
 # 12) Direction of arrival server
 tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
+  source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
   cd $HOME/Desktop/SAGE_ROBOT/speech
   python doa_server.py || { echo DOA server failed; sleep 5; }
   exec bash

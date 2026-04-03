@@ -43,10 +43,10 @@ class TTSConfig:
 @dataclass(frozen=True, slots=True)
 class STTConfig:
     language:             str  = "en"
-    whisper_model:        str  = "tiny.en"
+    whisper_model:        str  = "small.en"
     use_wakeword:         bool = True
     wakeword_backend:     str  = "openwakeword"
-    wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx"
+    wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx,assets/models/wakeword/alexa_v0.1.onnx,assets/models/wakeword/hey_jarvis_v0.1.onnx"
     wakeword_sensitivity: float = 0.3
     wakeword_buffer_dur:  float = 0.2
     wake_word:            str  = "sage"
@@ -59,7 +59,7 @@ class STTConfig:
 
 @dataclass(frozen=True, slots=True)
 class LLMConfig:
-    model:           str = "gpt-4.1-nano"
+    model:           str = "gpt-5.4"
     api_key_path:    str = "api_keys/api_keys.json"
     max_tool_depth:  int = 3
     max_history_len: int = 12

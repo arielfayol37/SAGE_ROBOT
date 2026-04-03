@@ -41,9 +41,13 @@ except ImportError:
 
 try:
     import websockets
-    from websockets.server import WebSocketServerProtocol
-except ImportError:
-    raise SystemExit("websockets package required:  pip install websockets")
+    from websockets import ServerConnection as _WSConn
+except (ImportError, AttributeError):
+    try:
+        import websockets
+        from websockets.server import WebSocketServerProtocol as _WSConn
+    except ImportError:
+        raise SystemExit("websockets package required:  pip install websockets")
 
 # -- XVF3800 USB constants --------------------------------------------
 _VID = 0x2886
@@ -61,7 +65,7 @@ logging.basicConfig(
 _log = logging.getLogger("doa_server")
 
 # -- Shared state ------------------------------------------------------
-_clients: Set[WebSocketServerProtocol] = set()
+_clients: Set[_WSConn] = set()
 _last_angle: float = 0.0
 
 
@@ -109,13 +113,13 @@ async def _doa_reader_loop(interval: float) -> None:
                 _last_angle = sim_angle
 
             msg = json.dumps({"type": "doa", "angle_deg": round(_last_angle, 2)})
-            dead: Set[WebSocketServerProtocol] = set()
+            dead: Set[_WSConn] = set()
             for ws in list(_clients):
                 try:
                     await ws.send(msg)
                 except Exception:
                     dead.add(ws)
-            _clients -= dead
+            _clients.difference_update(dead)
 
         except Exception as exc:
             _log.error("DOA read error: %s", exc)
@@ -123,7 +127,7 @@ async def _doa_reader_loop(interval: float) -> None:
         await asyncio.sleep(interval)
 
 
-async def _ws_handler(websocket: WebSocketServerProtocol) -> None:
+async def _ws_handler(websocket: _WSConn) -> None:
     """Handle a new face-UI WebSocket connection."""
     _log.info("Client connected from %s", websocket.remote_address)
     _clients.add(websocket)
