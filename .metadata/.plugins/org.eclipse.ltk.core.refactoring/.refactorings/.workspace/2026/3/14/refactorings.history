@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;SAGE_MCU_4_Encoder&apos;" deleteContents="false" description="Delete resource &apos;SAGE_MCU_4_Encoder&apos;" element1="/SAGE_MCU_4_Encoder" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1774976770755"/>
+</session>

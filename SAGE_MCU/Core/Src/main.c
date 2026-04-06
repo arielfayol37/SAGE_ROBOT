@@ -29,35 +29,63 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+typedef struct {
+	TIM_HandleTypeDef *tim;
+	uint16_t last;
+	int32_t  accum;
+} encoder_if_t;
+
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+#define DEADWHEEL_DIAMETER_M     (0.1f) //UPDATE!!!! vvvv that one too
+#define ODOM_TRACK_WIDTH_M       (0.1f)
 
 #define Lw  0.381 // Distance between wheels (m)
 #define WHEEL_DIAMETER  0.154f // Wheel size (m)
 #define GEAR_RATIO  0.714f // Ratio from the motor to the wheel
-#define Max_RPM  3000.0f // motor speed at 100% speed (guess from aliexpress listing, this needs to be calculated)
+#define Max_RPM  3000.0f // motor speed at 100% speed
 
-#define ENCODER_CPR        100       // counts per motor shaft rev (A or B channel edges before x4)
+#define MOTOR_ENCODER_CPR        100       // counts per motor shaft rev (A or B channel edges before x4)
 #define ENC_XMULT          2          // 1,2,4 depending on your timer encoder mode
-#define ENCODER_COUNTS_PER_MOTOR_REV  ((ENCODER_CPR)*(ENC_XMULT))
+#define ENCODER_COUNTS_PER_MOTOR_REV  ((MOTOR_ENCODER_CPR)*(ENC_XMULT))
+
+#define DW_ENCODER_CPR        600       // counts per motor shaft rev (A or B channel edges before x4) DEADWHEEL
+#define ENCODER_COUNTS_PER_DW_REV  ((DW_ENCODER_CPR)*(ENC_XMULT))
+
+#define DW_TIM_L                 (&htim2)          // assumed: TIM2 = Left deadwheel
+#define DW_TIM_R                 (&htim1)          // assumed: TIM1 = Right deadwheel
+#define MOTOR_TIM_L              (&htim4)          // assumed: TIM4 = Left motor encoder
+#define MOTOR_TIM_R              (&htim3)          // assumed: TIM3 = Right motor encoder
+
+#define PWM_TIM_L                (&htim15)         // assumed: TIM15 drives Left ESC/servo signal
+#define PWM_TIM_R                (&htim14)         // assumed: TIM14 drives Right ESC/servo signal
+#define PWM_CH_L                 (TIM_CHANNEL_1)
+#define PWM_CH_R                 (TIM_CHANNEL_1)
+
+#define MOTOR_SIGN_L             (+1)
+#define MOTOR_SIGN_R             (-1)
+
+#define DW_SIGN_L                (+1)
+#define DW_SIGN_R                (+1)
 
 // Control loop rate
 #define CTRL_HZ            100.0f
 #define CTRL_DT            (1.0f/CTRL_HZ)
 
-// PI gains (start conservative; tune on robot)
-#define KP                 0.4f
-#define KI                 8.0f
-#define KD                 0.0f       // optional; start at 0
+// PID Coeff.
+#define KP                 0.75f
+#define KI                 12.0f
+#define KD                 0.0f
 
 // PWM output limit (percent)
 #define DUTY_MAX_PCT       100.0f
 #define DUTY_MIN_PCT       0.0f
 
-// Sign conventions (flip if your wiring is opposite)
+// Sign conventions
 #define DIR_FWD_STATE      GPIO_PIN_SET
 #define DIR_REV_STATE      GPIO_PIN_RESET
 
@@ -104,6 +132,8 @@ TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
+TIM_HandleTypeDef htim14;
+TIM_HandleTypeDef htim15;
 
 UART_HandleTypeDef huart2;
 
@@ -120,10 +150,18 @@ volatile float cmd_v = 0.0f;   // m/s commanded
 volatile float cmd_w = 0.0f;   // rad/s commanded
 volatile uint32_t last_cmd_ms = 0;
 
+
+// Encoder interfaces
+static encoder_if_t enc_motor_L_if = {0};
+static encoder_if_t enc_motor_R_if = {0};
+static encoder_if_t enc_dw_L_if    = {0};
+static encoder_if_t enc_dw_R_if    = {0};
+
+
 // UART RX framing state (byte-wise header hunt, then payload)
 typedef enum {
-    RX_WAIT_HEADER = 0,
-    RX_WAIT_PAYLOAD
+	RX_WAIT_HEADER = 0,
+	RX_WAIT_PAYLOAD
 } rx_state_t;
 
 static volatile rx_state_t rx_state = RX_WAIT_HEADER;
@@ -182,10 +220,19 @@ static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_I2C3_Init(void);
+static void MX_TIM14_Init(void);
+static void MX_TIM15_Init(void);
 /* USER CODE BEGIN PFP */
 void Motor_SetSpeed_L(float v);
 void Motor_SetSpeed_R(float v);
 IMU_Data_t Read_IMU(void);
+
+static inline void encoder_if_reset(encoder_if_t *e);
+static inline int16_t encoder_if_delta(encoder_if_t *e);
+static float counts_to_linear_mps(int32_t delta_counts,
+		float dt_s,
+		int32_t counts_per_rev,
+		float wheel_diameter_m);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -193,32 +240,31 @@ IMU_Data_t Read_IMU(void);
 
 static void UART_StartRx(void)
 {
-    rx_state = RX_WAIT_HEADER;
+	rx_state = RX_WAIT_HEADER;
 
-    // Clear common UART error flags that can prevent RX after power-up noise
-    __HAL_UART_CLEAR_OREFLAG(&huart2);
-    __HAL_UART_CLEAR_NEFLAG(&huart2);
-    __HAL_UART_CLEAR_FEFLAG(&huart2);
-    __HAL_UART_CLEAR_PEFLAG(&huart2);
-    __HAL_UART_CLEAR_IDLEFLAG(&huart2);
+	// Clear common UART error flags that can prevent RX after power-up noise
+	__HAL_UART_CLEAR_OREFLAG(&huart2);
+	__HAL_UART_CLEAR_NEFLAG(&huart2);
+	__HAL_UART_CLEAR_FEFLAG(&huart2);
+	__HAL_UART_CLEAR_PEFLAG(&huart2);
+	__HAL_UART_CLEAR_IDLEFLAG(&huart2);
 
-    // Arm reception of 1 byte (header hunt)
-    HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+	// Arm reception of 1 byte (header hunt)
+	HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
 }
 
 static void UART_RxWatchdog(void)
 {
-    // If we saw a header but never got the 8 payload bytes (line noise / host stop),
-    // abort and resync so we don't stay stuck forever.
-    if (rx_state == RX_WAIT_PAYLOAD) {
-        uint32_t now = HAL_GetTick();
-        if ((now - rx_payload_start_ms) > RX_PAYLOAD_TIMEOUT_MS) {
-            (void)HAL_UART_AbortReceive_IT(&huart2);
-            UART_StartRx();
-        }
-    }
+	// If we saw a header but never got the 8 payload bytes (line noise / host stop),
+	// abort and resync so we don't stay stuck forever.
+	if (rx_state == RX_WAIT_PAYLOAD) {
+		uint32_t now = HAL_GetTick();
+		if ((now - rx_payload_start_ms) > RX_PAYLOAD_TIMEOUT_MS) {
+			(void)HAL_UART_AbortReceive_IT(&huart2);
+			UART_StartRx();
+		}
+	}
 }
-
 
 static inline float clampf(float x, float lo, float hi) {
 	if (x < lo) return lo;
@@ -228,24 +274,37 @@ static inline float clampf(float x, float lo, float hi) {
 
 void Motors_Init(void)
 {
-	// Start PWM channels
-	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);   // Right
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);   // Left
+	// Start PWM outputs (MOVED to TIM14/TIM15)
+	HAL_TIM_PWM_Start(PWM_TIM_R, PWM_CH_R);   // Right
+	HAL_TIM_PWM_Start(PWM_TIM_L, PWM_CH_L);   // Left
 
 	// Start encoder interfaces
-	HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
-	HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
+	HAL_TIM_Encoder_Start(MOTOR_TIM_L, TIM_CHANNEL_ALL);
+	HAL_TIM_Encoder_Start(MOTOR_TIM_R, TIM_CHANNEL_ALL);
+
+	// Deadwheel encoders (NEW)
+	HAL_TIM_Encoder_Start(DW_TIM_L, TIM_CHANNEL_ALL);
+	HAL_TIM_Encoder_Start(DW_TIM_R, TIM_CHANNEL_ALL);
 
 	Motor_SetSpeed_L(0.0f);
 	Motor_SetSpeed_R(0.0f);
 
-	// Reset counter
-	__HAL_TIM_SET_COUNTER(&htim3, 0);
-	__HAL_TIM_SET_COUNTER(&htim4, 0);
+	// Bind encoder structs
+	enc_motor_L_if.tim = MOTOR_TIM_L;
+	enc_motor_R_if.tim = MOTOR_TIM_R;
+	enc_dw_L_if.tim    = DW_TIM_L;
+	enc_dw_R_if.tim    = DW_TIM_R;
+
+	// Reset counters + delta tracking
+	encoder_if_reset(&enc_motor_L_if);
+	encoder_if_reset(&enc_motor_R_if);
+	encoder_if_reset(&enc_dw_L_if);
+	encoder_if_reset(&enc_dw_R_if);
 
 	enc_prev_L = 0;
 	enc_prev_R = 0;
 }
+
 
 static void IMU_Init(void)
 {
@@ -306,53 +365,54 @@ IMU_Data_t Read_IMU(void)
 	return d;
 }
 
-// Returns counts since last call; handles 16-bit wrap. Bind this to your actual encoder timers.
-int32_t encoder_delta_counts(TIM_HandleTypeDef *ht, int32_t *prev_accum)
+static inline void encoder_if_reset(encoder_if_t *e)
 {
-	// Read 16-bit counter (most STM32 timers default to 16b in encoder mode)
-	uint16_t now = __HAL_TIM_GET_COUNTER(ht);
-	static uint16_t lastL = 0, lastR = 0;
-
-	uint16_t *plast = (ht == &htim3) ? &lastL : &lastR;
-
-	int16_t diff = (int16_t)(now - *plast);   // signed wrap-safe delta
-	*plast = now;
-
-	// Accumulate into 32-bit (optional)
-	*prev_accum += diff;
-
-	return diff;
+	__HAL_TIM_SET_COUNTER(e->tim, 0);
+	e->last  = 0;
+	e->accum = 0;
 }
 
-float counts_to_wheel_mps(int32_t delta_counts, float dt_s)
+static inline int16_t encoder_if_delta(encoder_if_t *e)
+{
+	uint16_t now = __HAL_TIM_GET_COUNTER(e->tim);
+	int16_t d = (int16_t)(now - e->last);   // wrap-safe for 16-bit counters
+	e->last = now;
+	e->accum += d;
+	return d;
+}
+
+static float counts_to_linear_mps(int32_t delta_counts,
+		float dt_s,
+		int32_t counts_per_rev,
+		float wheel_diameter_m)
 {
 	if (dt_s <= 0.0001f) dt_s = CTRL_DT;
 
-	// Motor revs during dt
-	float motor_revs = (float)delta_counts / (float)ENCODER_COUNTS_PER_MOTOR_REV;
-	float wheel_revs = motor_revs / GEAR_RATIO;
+	float revs = (float)delta_counts / (float)counts_per_rev;
+	float circumference = (float)M_PI * wheel_diameter_m;
+	float meters = revs * circumference;
 
-	float wheel_rps  = wheel_revs / dt_s;
-	float circumference = (float)M_PI * WHEEL_DIAMETER;
-
-	return -wheel_rps * circumference;  // m/s
+	return meters / dt_s;
 }
+
 
 // Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
 void Motor_SetSpeed_L(float v)
 {
-	uint16_t speed = 1500 - (v*100);
+	uint16_t speed = 1500 - (v * 100);
 	if (speed > 1700) speed = 1700;
 	if (speed < 1300) speed = 1300;
-	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, speed);
+	__HAL_TIM_SET_COMPARE(PWM_TIM_L, PWM_CH_L, speed);
 }
+
 void Motor_SetSpeed_R(float v)
 {
-	uint16_t speed =  1500 + (v*100);
+	uint16_t speed = 1500 + (v * 100);
 	if (speed > 1700) speed = 1700;
 	if (speed < 1300) speed = 1300;
-	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, speed);
+	__HAL_TIM_SET_COMPARE(PWM_TIM_R, PWM_CH_R, speed);
 }
+
 
 
 // v  = forward speed (m/s)
@@ -360,127 +420,153 @@ void Motor_SetSpeed_R(float v)
 // Lw = distance between wheels (m)
 void Robot_Set_Velocity(float v_in, float w_in)
 {
-    cmd_v = v_in;
-    cmd_w = w_in;
-    last_cmd_ms = HAL_GetTick();   // treat as a fresh command source
+	cmd_v = v_in;
+	cmd_w = w_in;
+	last_cmd_ms = HAL_GetTick();   // treat as a fresh command source
+}
+
+static inline float wrap_0_2pi(float a)
+{
+	const float two_pi = 2.0f * (float)M_PI;
+	a = fmodf(a, two_pi);
+	if (a < 0.0f) a += two_pi;
+	return a;
 }
 
 void Control_Update(void)
 {
-    static uint32_t last_ctrl_ms = 0;
+	static uint32_t last_ctrl_ms = 0;
 
-    uint32_t now_ms = HAL_GetTick();
-    float dt = CTRL_DT;
-    if (last_ctrl_ms != 0) {
-        uint32_t dms = now_ms - last_ctrl_ms;
-        dt = (float)dms * 0.001f;
-        dt = clampf(dt, 0.001f, 0.050f);
-    }
-    last_ctrl_ms = now_ms;
+	uint32_t now_ms = HAL_GetTick();
+	float dt = CTRL_DT;
+	if (last_ctrl_ms != 0) {
+		uint32_t dms = now_ms - last_ctrl_ms;
+		dt = (float)dms * 0.001f;
+		dt = clampf(dt, 0.001f, 0.050f);
+	}
+	last_ctrl_ms = now_ms;
 
-    // --- Apply command timeout: if no recent UART cmd, force cmd_v/cmd_w to 0
-    float local_cmd_v = cmd_v;
-    float local_cmd_w = cmd_w;
+	// --- Apply command timeout ---
+	float local_cmd_v = cmd_v;
+	float local_cmd_w = cmd_w;
 
-    if ((now_ms - last_cmd_ms) > CMD_TIMEOUT_MS) {
-        local_cmd_v = 0.0f;
-        local_cmd_w = 0.0f;
-    }
+	if ((now_ms - last_cmd_ms) > CMD_TIMEOUT_MS) {
+		local_cmd_v = 0.0f;
+		local_cmd_w = 0.0f;
+	}
 
-    // Convert (v,w) command into wheel targets
-    float target_L = local_cmd_v - (local_cmd_w * Lw / 2.0f);
-    float target_R = local_cmd_v + (local_cmd_w * Lw / 2.0f);
+	// Convert (v,w) command into wheel targets (drive kinematics)
+	float target_L = local_cmd_v - (local_cmd_w * Lw / 2.0f);
+	float target_R = local_cmd_v + (local_cmd_w * Lw / 2.0f);
 
-    // Slew-limit desired wheel speeds so stopping is gradual
-    const float max_dv = MAX_ACCEL_MPS2 * dt; // m/s per control tick
+	// Slew-limit desired wheel speeds
+	const float max_dv = MAX_ACCEL_MPS2 * dt;
+	float stepL = clampf(target_L - desired_speed_L, -max_dv, +max_dv);
+	float stepR = clampf(target_R - desired_speed_R, -max_dv, +max_dv);
+	desired_speed_L += stepL;
+	desired_speed_R += stepR;
 
-    float stepL = clampf(target_L - desired_speed_L, -max_dv, +max_dv);
-    float stepR = clampf(target_R - desired_speed_R, -max_dv, +max_dv);
+	/* ========== 1) Motor speed feedback (TIM3/TIM4) for PI control ========== */
+	int16_t dMotorL = encoder_if_delta(&enc_motor_L_if) * MOTOR_SIGN_L;
+	int16_t dMotorR = encoder_if_delta(&enc_motor_R_if) * MOTOR_SIGN_R;
 
-    desired_speed_L += stepL;
-    desired_speed_R += stepR;
+	// motor encoder counts -> wheel m/s uses gear ratio + motor CPR
+	// (keep your original relationship)
+	// motor revs = counts / ENCODER_COUNTS_PER_MOTOR_REV
+	// wheel revs = motor revs / GEAR_RATIO
+	float motorL_revs = (float)dMotorL / (float)ENCODER_COUNTS_PER_MOTOR_REV;
+	float motorR_revs = (float)dMotorR / (float)ENCODER_COUNTS_PER_MOTOR_REV;
+	float wheelL_revs = motorL_revs / GEAR_RATIO;
+	float wheelR_revs = motorR_revs / GEAR_RATIO;
+	float wheel_circ  = (float)M_PI * WHEEL_DIAMETER;
 
-    // 1) Measure wheel speeds from encoders
-    int32_t dL = encoder_delta_counts(&htim4, &enc_prev_L);
-    int32_t dR = -encoder_delta_counts(&htim3, &enc_prev_R);
+	float vL_meas = (wheelL_revs * wheel_circ) / dt;  // m/s
+	float vR_meas = (wheelR_revs * wheel_circ) / dt;  // m/s
 
-    float vL_meas = counts_to_wheel_mps(dL, dt); // m/s
-    float vR_meas = counts_to_wheel_mps(dR, dt); // m/s
+	speed_L = vL_meas;
+	speed_R = vR_meas;
 
-    float v_robot = (vL_meas + vR_meas) / 2.0f; // m/s
-    float w_robot = (vR_meas - vL_meas) / Lw;   // rad/s
+	/* ========== 2) ODOMETRY from deadwheels (TIM1/TIM2) ========== */
+	int16_t dDwL = encoder_if_delta(&enc_dw_L_if) * DW_SIGN_L;
+	int16_t dDwR = encoder_if_delta(&enc_dw_R_if) * DW_SIGN_R;
 
-    // Integrate to update position and orientation
-    robot_Theta += w_robot * dt;
-    robot_Theta = fmodf(robot_Theta, 2.0f * (float)M_PI);
+	float vL_odom = counts_to_linear_mps(dDwL, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
+	float vR_odom = counts_to_linear_mps(dDwR, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
 
-    robot_X += v_robot * cosf(robot_Theta) * dt;
-    robot_Y += v_robot * sinf(robot_Theta) * dt;
+	float v_robot = (vL_odom + vR_odom) * 0.5f;
+	float w_robot = (vR_odom - vL_odom) / ODOM_TRACK_WIDTH_M;
 
-    // These are MEASURED (used for odom TX)
-    v = v_robot;
-    w = w_robot;
+	// Integrate pose
+	robot_Theta += w_robot * dt;
+	robot_Theta = fmodf(robot_Theta, 2.0f * (float)M_PI);
 
-    // Errors (m/s)
-    float eL = desired_speed_L - vL_meas;
-    float eR = desired_speed_R - vR_meas;
+	robot_X += v_robot * cosf(robot_Theta) * dt;
+	robot_Y += v_robot * sinf(robot_Theta) * dt;
 
-    // PI control
-    i_term_L += KI * eL * dt;
-    i_term_R += KI * eR * dt;
+	// Reported odom velocities (measured from deadwheels)
+	v = v_robot;
+	w = w_robot;
 
-    if ((fabsf(local_cmd_v) < 0.01f) && (fabsf(local_cmd_w) < 0.01f)) {
-        i_term_L *= 0.98f;
-        i_term_R *= 0.98f;
-    }
-    i_term_L = clampf(i_term_L, -0.5f, 0.5f);
-    i_term_R = clampf(i_term_R, -0.5f, 0.5f);
+	/* ========== 3) PI control using motor measured speeds ========== */
+	float eL = desired_speed_L - vL_meas;
+	float eR = desired_speed_R - vR_meas;
 
-    float uL = KP * eL + i_term_L;
-    float uR = KP * eR + i_term_R;
+	i_term_L += KI * eL * dt;
+	i_term_R += KI * eR * dt;
 
-    Motor_SetSpeed_L(desired_speed_L + uL);
-    Motor_SetSpeed_R(desired_speed_R + uR);
+	if ((fabsf(local_cmd_v) < 0.01f) && (fabsf(local_cmd_w) < 0.01f)) {
+		i_term_L *= 0.98f;
+		i_term_R *= 0.98f;
+	}
+
+	i_term_L = clampf(i_term_L, -0.5f, 0.5f);
+	i_term_R = clampf(i_term_R, -0.5f, 0.5f);
+
+	float uL = KP * eL + i_term_L;
+	float uR = KP * eR + i_term_R;
+
+	Motor_SetSpeed_L(desired_speed_L + uL);
+	Motor_SetSpeed_R(desired_speed_R + uR);
 }
 
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance != USART2) return;
+	if (huart->Instance != USART2) return;
 
-    if (rx_state == RX_WAIT_HEADER)
-    {
-        // Look for header byte 'x' == 120
-        if (rx_header_byte == 120)
-        {
-            rx_state = RX_WAIT_PAYLOAD;
-            rx_payload_start_ms = HAL_GetTick();
-            HAL_UART_Receive_IT(&huart2, rx_payload, sizeof(rx_payload)); // 8 bytes
-        }
-        else
-        {
-            // Keep hunting for header
-            HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
-        }
-    }
-    else // RX_WAIT_PAYLOAD
-    {
-        float new_cmd_v = 0.0f;
-        float new_cmd_w = 0.0f;
+	if (rx_state == RX_WAIT_HEADER)
+	{
+		// Look for header byte 'x' == 120
+		if (rx_header_byte == 120)
+		{
+			rx_state = RX_WAIT_PAYLOAD;
+			rx_payload_start_ms = HAL_GetTick();
+			HAL_UART_Receive_IT(&huart2, rx_payload, sizeof(rx_payload)); // 8 bytes
+		}
+		else
+		{
+			// Keep hunting for header
+			HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+		}
+	}
+	else // RX_WAIT_PAYLOAD
+	{
+		float new_cmd_v = 0.0f;
+		float new_cmd_w = 0.0f;
 
-        memcpy(&new_cmd_v, &rx_payload[0],  sizeof(float));
-        memcpy(&new_cmd_w, &rx_payload[4],  sizeof(float));
+		memcpy(&new_cmd_v, &rx_payload[0],  sizeof(float));
+		memcpy(&new_cmd_w, &rx_payload[4],  sizeof(float));
 
-        cmd_v = new_cmd_v;
-        cmd_w = new_cmd_w;
-        last_cmd_ms = HAL_GetTick();
+		cmd_v = new_cmd_v;
+		cmd_w = new_cmd_w;
+		last_cmd_ms = HAL_GetTick();
 
-        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 
-        // Go back to header hunt (resync-friendly)
-        rx_state = RX_WAIT_HEADER;
-        HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
-    }
+		// Go back to header hunt (resync-friendly)
+		rx_state = RX_WAIT_HEADER;
+		HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+	}
 }
 
 
@@ -531,10 +617,30 @@ void Control_Packet(uint8_t Control_Byte)
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance != USART2) return;
+	if (huart->Instance != USART2) return;
 
-    (void)HAL_UART_AbortReceive_IT(&huart2);
-    UART_StartRx();
+	(void)HAL_UART_AbortReceive_IT(&huart2);
+	UART_StartRx();
+}
+
+static void TX_Debug(void)
+{
+	char debug_str[128];
+
+	// Format the important data into a readable ASCII string
+	// Cmd: Commanded v/w from PC
+	// Set: Slew-limited desired speeds for Left/Right
+	// Meas: Actual measured speeds for Left/Right
+	// Odom: Calculated X, Y, and Theta
+	int len = snprintf(debug_str, sizeof(debug_str),
+			"DEBUG | Cmd: %.2f, %.2f | Set: %.2f, %.2f | Meas: %.2f, %.2f | Odom: X:%.2f Y:%.2f Th:%.2f\r\n",
+			cmd_v, cmd_w,
+			desired_speed_L, desired_speed_R,
+			speed_L, speed_R,
+			robot_X, robot_Y, robot_Theta);
+
+	// Transmit over UART2 (20ms timeout to prevent hanging the control loop)
+	(void)HAL_UART_Transmit(&huart2, (uint8_t*)debug_str, len, 20);
 }
 
 /* USER CODE END 0 */
@@ -574,25 +680,29 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM4_Init();
   MX_I2C3_Init();
+  MX_TIM14_Init();
+  MX_TIM15_Init();
   /* USER CODE BEGIN 2 */
 
 	Motors_Init(); // Start these motors dih
 	IMU_Init(); // ts pmo sybau
 
-    // Initialize cmd timing so it starts "timed out" => ramps to 0 until first cmd arrives
-    last_cmd_ms = HAL_GetTick();
+	// Initialize cmd timing so it starts "timed out" => ramps to 0 until first cmd arrives
+	last_cmd_ms = HAL_GetTick();
 
-    // Start UART RX in resync-friendly mode
-    UART_StartRx();
+	// Start UART RX in resync-friendly mode
+	UART_StartRx();
 
 	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
 	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
 	const uint32_t imu_period    = 1000U / 100;     // 10 ms  -> 100 Hz
+	const uint32_t debug_period  = 1000U / 10;      // 100 ms -> 10 Hz (New)
 
 	uint32_t currentTime;
 	uint32_t prevUpdateTime = 0;
 	uint32_t prevTXTime = 0;
 	uint32_t prevIMUTime = 0;
+	uint32_t prevDebugTime = 0;
 
 
   /* USER CODE END 2 */
@@ -624,6 +734,14 @@ int main(void)
 			IMU_Data_t d = Read_IMU();   // consider bias removal here
 			TX_Imu(&d);
 			prevIMUTime = currentTime;
+		}
+		// --- NEW DEBUG LOGIC ---
+		// Read PC_10. If HIGH, transmit the debug string.
+		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_10) == GPIO_PIN_SET) {
+			if( (currentTime - prevDebugTime) >= debug_period) {
+				TX_Debug();
+				prevDebugTime = currentTime;
+			}
 		}
 	}
   /* USER CODE END 3 */
@@ -735,31 +853,29 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 0 */
 
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_Encoder_InitTypeDef sConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
 
   /* USER CODE BEGIN TIM1_Init 1 */
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 63;
+  htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 20000;
+  htim1.Init.Period = 65535;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC1Filter = 15;
+  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC2Filter = 15;
+  if (HAL_TIM_Encoder_Init(&htim1, &sConfig) != HAL_OK)
   {
     Error_Handler();
   }
@@ -770,37 +886,9 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
-  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
-  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
-  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
-  sBreakDeadTimeConfig.DeadTime = 0;
-  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
-  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
-  sBreakDeadTimeConfig.BreakFilter = 0;
-  sBreakDeadTimeConfig.BreakAFMode = TIM_BREAK_AFMODE_INPUT;
-  sBreakDeadTimeConfig.Break2State = TIM_BREAK2_DISABLE;
-  sBreakDeadTimeConfig.Break2Polarity = TIM_BREAK2POLARITY_HIGH;
-  sBreakDeadTimeConfig.Break2Filter = 0;
-  sBreakDeadTimeConfig.Break2AFMode = TIM_BREAK_AFMODE_INPUT;
-  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
-  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN TIM1_Init 2 */
 
   /* USER CODE END TIM1_Init 2 */
-  HAL_TIM_MspPostInit(&htim1);
 
 }
 
@@ -816,29 +904,28 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 0 */
 
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_Encoder_InitTypeDef sConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM2_Init 1 */
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 63;
+  htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 20000;
+  htim2.Init.Period = 65535;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC1Filter = 15;
+  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC2Filter = 15;
+  if (HAL_TIM_Encoder_Init(&htim2, &sConfig) != HAL_OK)
   {
     Error_Handler();
   }
@@ -848,18 +935,9 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
-  HAL_TIM_MspPostInit(&htim2);
 
 }
 
@@ -962,6 +1040,118 @@ static void MX_TIM4_Init(void)
 }
 
 /**
+  * @brief TIM14 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM14_Init(void)
+{
+
+  /* USER CODE BEGIN TIM14_Init 0 */
+
+  /* USER CODE END TIM14_Init 0 */
+
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM14_Init 1 */
+
+  /* USER CODE END TIM14_Init 1 */
+  htim14.Instance = TIM14;
+  htim14.Init.Prescaler = 63;
+  htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim14.Init.Period = 20000;
+  htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim14) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim14) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim14, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM14_Init 2 */
+
+  /* USER CODE END TIM14_Init 2 */
+  HAL_TIM_MspPostInit(&htim14);
+
+}
+
+/**
+  * @brief TIM15 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM15_Init(void)
+{
+
+  /* USER CODE BEGIN TIM15_Init 0 */
+
+  /* USER CODE END TIM15_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM15_Init 1 */
+
+  /* USER CODE END TIM15_Init 1 */
+  htim15.Instance = TIM15;
+  htim15.Init.Prescaler = 63;
+  htim15.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim15.Init.Period = 20000;
+  htim15.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim15.Init.RepetitionCounter = 0;
+  htim15.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim15) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim15, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_PWM_ConfigChannel(&htim15, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.BreakFilter = 0;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim15, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM15_Init 2 */
+
+  /* USER CODE END TIM15_Init 2 */
+  HAL_TIM_MspPostInit(&htim15);
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -1042,6 +1232,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(LED_GREEN_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : Debug_Mode_Pin */
+  GPIO_InitStruct.Pin = Debug_Mode_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(Debug_Mode_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

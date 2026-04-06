@@ -3,6 +3,8 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="false"/>
 	<list key="searchhistory">
+		<item value="wrap"/>
+		<item value="fmodf"/>
 		<item value="error"/>
 		<item value="rxPacket"/>
 		<item value="rx_byte"/>
