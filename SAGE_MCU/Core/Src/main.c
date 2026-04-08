@@ -24,6 +24,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include "sh2.h"
+#include "sh2_SensorValue.h"
+#include "sh2_err.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,8 +44,16 @@ typedef struct {
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define DEADWHEEL_DIAMETER_M     (0.1f) //UPDATE!!!! vvvv that one too
-#define ODOM_TRACK_WIDTH_M       (0.1f)
+#define DEADWHEEL_DIAMETER_M     (0.08255f * 0.9866f) //4 in wheels in mm
+
+// --- Odometry Wheel Offsets ---
+// Lateral (Y) distance from robot center to the Straight wheel.
+// Positive if the wheel is to the left of the center.
+#define DW_S_OFFSET_Y  (0.1016f) // Adjust this to your robot's physical measurements (meters)
+
+// Forward (X) distance from robot center to the Horizontal wheel.
+// Positive if the wheel is forward of the center.
+#define DW_H_OFFSET_X  (0.400f) // Adjust this to your robot's physical measurements (meters)
 
 #define Lw  0.381 // Distance between wheels (m)
 #define WHEEL_DIAMETER  0.154f // Wheel size (m)
@@ -56,30 +67,31 @@ typedef struct {
 #define DW_ENCODER_CPR        600       // counts per motor shaft rev (A or B channel edges before x4) DEADWHEEL
 #define ENCODER_COUNTS_PER_DW_REV  ((DW_ENCODER_CPR)*(ENC_XMULT))
 
-#define DW_TIM_L                 (&htim2)          // assumed: TIM2 = Left deadwheel
-#define DW_TIM_R                 (&htim1)          // assumed: TIM1 = Right deadwheel
-#define MOTOR_TIM_L              (&htim4)          // assumed: TIM4 = Left motor encoder
+#define DW_TIM_H                 (&htim1)          // assumed: TIM1 = Horizontal dead wheel
+#define DW_TIM_S                 (&htim2)          // assumed: TIM2 = straight dead wheel
 #define MOTOR_TIM_R              (&htim3)          // assumed: TIM3 = Right motor encoder
+#define MOTOR_TIM_L              (&htim4)          // assumed: TIM4 = Left motor encoder
 
-#define PWM_TIM_L                (&htim15)         // assumed: TIM15 drives Left ESC/servo signal
-#define PWM_TIM_R                (&htim14)         // assumed: TIM14 drives Right ESC/servo signal
-#define PWM_CH_L                 (TIM_CHANNEL_1)
+#define PWM_TIM_R                (&htim15)         // assumed: TIM14 drives Right ESC signal
+#define PWM_TIM_L                (&htim14)         // assumed: TIM15 drives Left ESC signal
 #define PWM_CH_R                 (TIM_CHANNEL_1)
+#define PWM_CH_L                 (TIM_CHANNEL_1)
 
-#define MOTOR_SIGN_L             (+1)
-#define MOTOR_SIGN_R             (-1)
 
-#define DW_SIGN_L                (+1)
-#define DW_SIGN_R                (+1)
+#define MOTOR_SIGN_L             (-1)
+#define MOTOR_SIGN_R             (+1)
+
+#define DW_SIGN_H                (+1)
+#define DW_SIGN_S                (+1)
 
 // Control loop rate
 #define CTRL_HZ            100.0f
 #define CTRL_DT            (1.0f/CTRL_HZ)
 
 // PID Coeff.
-#define KP                 0.75f
-#define KI                 12.0f
-#define KD                 0.0f
+#define KP                 0.7f // .75
+#define KI                 12.0f // 12
+#define KD                 0.0f // 0
 
 // PWM output limit (percent)
 #define DUTY_MAX_PCT       100.0f
@@ -154,8 +166,8 @@ volatile uint32_t last_cmd_ms = 0;
 // Encoder interfaces
 static encoder_if_t enc_motor_L_if = {0};
 static encoder_if_t enc_motor_R_if = {0};
-static encoder_if_t enc_dw_L_if    = {0};
-static encoder_if_t enc_dw_R_if    = {0};
+static encoder_if_t enc_dw_H_if    = {0};
+static encoder_if_t enc_dw_S_if    = {0};
 
 
 // UART RX framing state (byte-wise header hunt, then payload)
@@ -172,10 +184,6 @@ static volatile uint32_t rx_payload_start_ms = 0;
 // Forward decl helpers
 static void UART_StartRx(void);
 static void UART_RxWatchdog(void);
-
-
-//static float cmd_speed_L = 0.0f; // m/s  (left wheel) These are used for acceleration limiting
-//static float cmd_speed_R = 0.0f; // m/s  (right wheel)
 
 static int32_t enc_prev_L = 0; // delta counts L
 static int32_t enc_prev_R = 0; // delta counts R
@@ -207,7 +215,7 @@ typedef struct { // IMU data structure
 	float gx, gy, gz;    // rad/s
 } IMU_Data_t;
 
-
+extern sh2_Hal_t sh2Hal;
 
 /* USER CODE END PV */
 
@@ -283,8 +291,8 @@ void Motors_Init(void)
 	HAL_TIM_Encoder_Start(MOTOR_TIM_R, TIM_CHANNEL_ALL);
 
 	// Deadwheel encoders (NEW)
-	HAL_TIM_Encoder_Start(DW_TIM_L, TIM_CHANNEL_ALL);
-	HAL_TIM_Encoder_Start(DW_TIM_R, TIM_CHANNEL_ALL);
+	HAL_TIM_Encoder_Start(DW_TIM_H, TIM_CHANNEL_ALL);
+	HAL_TIM_Encoder_Start(DW_TIM_S, TIM_CHANNEL_ALL);
 
 	Motor_SetSpeed_L(0.0f);
 	Motor_SetSpeed_R(0.0f);
@@ -292,14 +300,14 @@ void Motors_Init(void)
 	// Bind encoder structs
 	enc_motor_L_if.tim = MOTOR_TIM_L;
 	enc_motor_R_if.tim = MOTOR_TIM_R;
-	enc_dw_L_if.tim    = DW_TIM_L;
-	enc_dw_R_if.tim    = DW_TIM_R;
+	enc_dw_H_if.tim    = DW_TIM_H;
+	enc_dw_S_if.tim    = DW_TIM_S;
 
 	// Reset counters + delta tracking
 	encoder_if_reset(&enc_motor_L_if);
 	encoder_if_reset(&enc_motor_R_if);
-	encoder_if_reset(&enc_dw_L_if);
-	encoder_if_reset(&enc_dw_R_if);
+	encoder_if_reset(&enc_dw_H_if);
+	encoder_if_reset(&enc_dw_S_if);
 
 	enc_prev_L = 0;
 	enc_prev_R = 0;
@@ -399,7 +407,8 @@ static float counts_to_linear_mps(int32_t delta_counts,
 // Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
 void Motor_SetSpeed_L(float v)
 {
-	uint16_t speed = 1500 - (v * 100);
+	uint16_t speed = 1500 + (v * 100);
+
 	if (speed > 1700) speed = 1700;
 	if (speed < 1300) speed = 1300;
 	__HAL_TIM_SET_COMPARE(PWM_TIM_L, PWM_CH_L, speed);
@@ -407,7 +416,7 @@ void Motor_SetSpeed_L(float v)
 
 void Motor_SetSpeed_R(float v)
 {
-	uint16_t speed = 1500 + (v * 100);
+	uint16_t speed = 1500 - (v * 100);
 	if (speed > 1700) speed = 1700;
 	if (speed < 1300) speed = 1300;
 	__HAL_TIM_SET_COMPARE(PWM_TIM_R, PWM_CH_R, speed);
@@ -456,8 +465,8 @@ void Control_Update(void)
 	}
 
 	// Convert (v,w) command into wheel targets (drive kinematics)
-	float target_L = local_cmd_v - (local_cmd_w * Lw / 2.0f);
-	float target_R = local_cmd_v + (local_cmd_w * Lw / 2.0f);
+	float target_L = local_cmd_v + (local_cmd_w * Lw / 2.0f);
+	float target_R = local_cmd_v - (local_cmd_w * Lw / 2.0f);
 
 	// Slew-limit desired wheel speeds
 	const float max_dv = MAX_ACCEL_MPS2 * dt;
@@ -487,25 +496,31 @@ void Control_Update(void)
 	speed_R = vR_meas;
 
 	/* ========== 2) ODOMETRY from deadwheels (TIM1/TIM2) ========== */
-	int16_t dDwL = encoder_if_delta(&enc_dw_L_if) * DW_SIGN_L;
-	int16_t dDwR = encoder_if_delta(&enc_dw_R_if) * DW_SIGN_R;
+		int16_t dDwH = encoder_if_delta(&enc_dw_H_if) * DW_SIGN_H;
+		int16_t dDwS = encoder_if_delta(&enc_dw_S_if) * DW_SIGN_S;
 
-	float vL_odom = counts_to_linear_mps(dDwL, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
-	float vR_odom = counts_to_linear_mps(dDwR, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
+		// Calculate raw linear velocities of each dead wheel
+		float vS_odom = counts_to_linear_mps(dDwS, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
+		float vH_odom = counts_to_linear_mps(dDwH, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
 
-	float v_robot = (vL_odom + vR_odom) * 0.5f;
-	float w_robot = (vR_odom - vL_odom) / ODOM_TRACK_WIDTH_M;
+		// Calculate robot angular velocity (w) from the horizontal wheel
+		// (Assuming Vy = 0 due to non-holonomic constraints)
+		float w_robot = vH_odom / DW_H_OFFSET_X;
 
-	// Integrate pose
-	robot_Theta += w_robot * dt;
-	robot_Theta = fmodf(robot_Theta, 2.0f * (float)M_PI);
+		// Calculate forward velocity (Vx) from the straight wheel
+		float v_robot = vS_odom + (w_robot * DW_S_OFFSET_Y);
 
-	robot_X += v_robot * cosf(robot_Theta) * dt;
-	robot_Y += v_robot * sinf(robot_Theta) * dt;
+		// Integrate pose
+		robot_Theta += w_robot * dt;
+		robot_Theta = wrap_0_2pi(robot_Theta); // Using your wrap helper function
 
-	// Reported odom velocities (measured from deadwheels)
-	v = v_robot;
-	w = w_robot;
+		// Update X and Y position
+		robot_X += v_robot * cosf(robot_Theta) * dt;
+		robot_Y += v_robot * sinf(robot_Theta) * dt;
+
+		// Reported odom velocities
+		v = v_robot;
+		w = w_robot;
 
 	/* ========== 3) PI control using motor measured speeds ========== */
 	float eL = desired_speed_L - vL_meas;
@@ -623,26 +638,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 	UART_StartRx();
 }
 
-static void TX_Debug(void)
-{
-	char debug_str[128];
-
-	// Format the important data into a readable ASCII string
-	// Cmd: Commanded v/w from PC
-	// Set: Slew-limited desired speeds for Left/Right
-	// Meas: Actual measured speeds for Left/Right
-	// Odom: Calculated X, Y, and Theta
-	int len = snprintf(debug_str, sizeof(debug_str),
-			"DEBUG | Cmd: %.2f, %.2f | Set: %.2f, %.2f | Meas: %.2f, %.2f | Odom: X:%.2f Y:%.2f Th:%.2f\r\n",
-			cmd_v, cmd_w,
-			desired_speed_L, desired_speed_R,
-			speed_L, speed_R,
-			robot_X, robot_Y, robot_Theta);
-
-	// Transmit over UART2 (20ms timeout to prevent hanging the control loop)
-	(void)HAL_UART_Transmit(&huart2, (uint8_t*)debug_str, len, 20);
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -684,6 +679,24 @@ int main(void)
   MX_TIM15_Init();
   /* USER CODE BEGIN 2 */
 
+  // 1. Open the sensor hub
+    if (sh2_open(&sh2Hal, NULL, NULL) != SH2_OK) {
+        // Handle Error: Sensor didn't open
+        Error_Handler();
+    }
+
+    // 2. Configure the sensor to output Game Rotation Vectors at 100Hz (10,000 microseconds)
+      sh2_SensorConfig_t config;
+      config.changeSensitivityEnabled = false;
+      config.wakeupEnabled = false;
+      config.changeSensitivityRelative = false;
+      config.alwaysOnEnabled = false;
+      config.changeSensitivity = 0;
+      config.reportInterval_us = 10000; // 100 Hz
+      config.batchInterval_us = 0;
+
+      sh2_setSensorConfig(SH2_GAME_ROTATION_VECTOR, &config);
+
 	Motors_Init(); // Start these motors dih
 	IMU_Init(); // ts pmo sybau
 
@@ -696,13 +709,11 @@ int main(void)
 	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
 	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
 	const uint32_t imu_period    = 1000U / 100;     // 10 ms  -> 100 Hz
-	const uint32_t debug_period  = 1000U / 10;      // 100 ms -> 10 Hz (New)
 
 	uint32_t currentTime;
 	uint32_t prevUpdateTime = 0;
 	uint32_t prevTXTime = 0;
 	uint32_t prevIMUTime = 0;
-	uint32_t prevDebugTime = 0;
 
 
   /* USER CODE END 2 */
@@ -734,14 +745,6 @@ int main(void)
 			IMU_Data_t d = Read_IMU();   // consider bias removal here
 			TX_Imu(&d);
 			prevIMUTime = currentTime;
-		}
-		// --- NEW DEBUG LOGIC ---
-		// Read PC_10. If HIGH, transmit the debug string.
-		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_10) == GPIO_PIN_SET) {
-			if( (currentTime - prevDebugTime) >= debug_period) {
-				TX_Debug();
-				prevDebugTime = currentTime;
-			}
 		}
 	}
   /* USER CODE END 3 */

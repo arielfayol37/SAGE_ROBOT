@@ -2274,3 +2274,68 @@ Command-line arguments:  -os win32 -ws win32 -arch x86_64
 !MESSAGE OK
 !SUBENTRY 1 org.eclipse.core.resources 4 77 2026-04-06 14:26:14.950
 !MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'
+
+!ENTRY org.eclipse.core.resources 4 77 2026-04-06 15:25:51.736
+!MESSAGE Invalid project description.
+!SUBENTRY 1 unknown 0 0 2026-04-06 15:25:51.736
+!MESSAGE OK
+!SUBENTRY 1 org.eclipse.core.resources 4 77 2026-04-06 15:25:51.736
+!MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'
+
+!ENTRY org.eclipse.core.resources 4 77 2026-04-06 15:34:37.484
+!MESSAGE Invalid project description.
+!SUBENTRY 1 unknown 0 0 2026-04-06 15:34:37.484
+!MESSAGE OK
+!SUBENTRY 1 org.eclipse.core.resources 4 77 2026-04-06 15:34:37.484
+!MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'
+
+!ENTRY org.eclipse.core.resources 4 77 2026-04-06 17:45:12.373
+!MESSAGE Invalid project description.
+!SUBENTRY 1 unknown 0 0 2026-04-06 17:45:12.373
+!MESSAGE OK
+!SUBENTRY 1 org.eclipse.core.resources 4 77 2026-04-06 17:45:12.374
+!MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'
+
+!ENTRY org.eclipse.core.resources 4 77 2026-04-06 19:43:43.955
+!MESSAGE Invalid project description.
+!SUBENTRY 1 unknown 0 0 2026-04-06 19:43:43.955
+!MESSAGE OK
+!SUBENTRY 1 org.eclipse.core.resources 4 77 2026-04-06 19:43:43.955
+!MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'
+
+!ENTRY org.eclipse.core.resources 4 77 2026-04-06 22:44:30.747
+!MESSAGE Invalid project description.
+!SUBENTRY 1 unknown 0 0 2026-04-06 22:44:30.747
+!MESSAGE OK
+!SUBENTRY 1 org.eclipse.core.resources 4 77 2026-04-06 22:44:30.747
+!MESSAGE C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU overlaps the location of another project: 'SAGE_MCU'
+!SESSION 2026-04-07 15:56:23.642 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_US
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2026-04-07 15:56:31.519
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-04-07 15:56:31.521
+!MESSAGE Log4j2 initialized with config file C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-04-07 15:56:38.106
+!MESSAGE Started RMI Server, listening on port 41337
+!SESSION 2026-04-07 18:16:29.483 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_US
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2026-04-07 18:16:37.408
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-04-07 18:16:37.410
+!MESSAGE Log4j2 initialized with config file C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-04-07 18:16:43.494
+!MESSAGE Started RMI Server, listening on port 41337

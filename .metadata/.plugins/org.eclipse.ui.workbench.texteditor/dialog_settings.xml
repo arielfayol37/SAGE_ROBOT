@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
 	<item key="hasShownOverlayPopupBefore" value="true"/>
-	<item key="replaceBarOpen" value="false"/>
+	<item key="replaceBarOpen" value="true"/>
 	<list key="searchhistory">
+		<item value="hi2c1"/>
+		<item value="hi2c"/>
+		<item value="sh2_hal_t"/>
+		<item value="DW_ENCODER_CPR"/>
+		<item value="enc_dw"/>
+		<item value="DW_SIgn"/>
+		<item value="DW_TIM"/>
 		<item value="wrap"/>
 		<item value="fmodf"/>
 		<item value="error"/>
@@ -11,7 +18,9 @@
 		<item value="theta"/>
 		<item value="TX_IMU"/>
 		<item value="LEN_ODOM"/>
-		<item value="SOF"/>
-		<item value="hi2c2"/>
+	</list>
+	<list key="replacehistory">
+		<item value="hi2c3"/>
+		<item value="sh2_Hal_t"/>
 	</list>
 </section>
