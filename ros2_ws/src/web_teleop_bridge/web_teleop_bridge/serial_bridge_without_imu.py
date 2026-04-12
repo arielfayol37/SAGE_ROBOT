@@ -96,6 +96,12 @@ class SerialBridgeNoImu(Node):
         v = float(msg.linear.x)
         w = float(msg.angular.z)
 
+        min_inplace_w = 0.30
+        stationary_v_thresh = 0.05
+
+        # If robot is basically not translating, enforce a minimum usable turn speed
+        if abs(v) < stationary_v_thresh and 0.0 < abs(w) < min_inplace_w:
+            w = min_inplace_w if w > 0.0 else -min_inplace_w
         # Keep your existing TX format exactly:
         # 0x78 + float32(v) + float32(w)
         pkt = struct.pack('<Bff', 0x78, v, w)

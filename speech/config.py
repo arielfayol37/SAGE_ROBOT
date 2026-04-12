@@ -45,10 +45,14 @@ class STTConfig:
     language:             str  = "en"
     whisper_model:        str  = "small.en"
     use_wakeword:         bool = True
+    silero_use_onnx:      bool = True
+    silero_sensitivity:   float = 0.6
+    silero_deactivity_detection: bool = True
+    max_recording_duration:   float = 8.0
     wakeword_backend:     str  = "openwakeword"
     # wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx,assets/models/wakeword/alexa_v0.1.onnx,assets/models/wakeword/hey_jarvis_v0.1.onnx"
     wakeword_model_path:  str  = "assets/models/wakeword/alexa_v0.1.onnx"
-    wakeword_sensitivity: float = 0.3
+    wakeword_sensitivity: float = 0.8
     wakeword_buffer_dur:  float = 0.2
     wake_word:            str  = "sage"
     ready_chime_path:     str  = "assets/audio/ui-wakesound.wav"
