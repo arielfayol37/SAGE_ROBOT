@@ -71,7 +71,7 @@ tmux new-window -t "$SESSION" -n "Status Web" "bash -lc '
   exec bash
 '"
 
-
+# 7) Serial Bridge
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
