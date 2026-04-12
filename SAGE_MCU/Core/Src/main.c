@@ -24,9 +24,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-#include "sh2.h"
-#include "sh2_SensorValue.h"
-#include "sh2_err.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -89,8 +86,8 @@ typedef struct {
 #define CTRL_DT            (1.0f/CTRL_HZ)
 
 // PID Coeff.
-#define KP                 0.7f // .75
-#define KI                 12.0f // 12
+#define KP                 1.0f //
+#define KI                 18.0f // was 12 but still struggles to reach speed quickly
 #define KD                 0.0f // 0
 
 // PWM output limit (percent)
@@ -101,13 +98,16 @@ typedef struct {
 #define DIR_FWD_STATE      GPIO_PIN_SET
 #define DIR_REV_STATE      GPIO_PIN_RESET
 
-//#define MPU9250_ADDR 	 0x68  // left-shifted for HAL
-#define MPU9250_ADDR_7BIT  0x68
-#define MPU9250_ADDR       (MPU9250_ADDR_7BIT << 1)  // HAL expects 8-bit
+// IMU defines
 
-#define MPU9250_REG_DATA 0x3B
-#define PWR_MGMT_1 		 0x6B
-#define WHO_AM_I   		 0x75
+#define BNO_ADDR              (0x4B << 1)
+#define BNO_CH_CONTROL        2
+#define BNO_CH_INPUT_REPORTS  3
+
+#define REPORTID_ACCELEROMETER    0x01
+#define REPORTID_GYROSCOPE        0x02
+#define REPORTID_MAGNETOMETER     0x03
+#define REPORTID_SET_FEATURE_CMD  0xFD
 
 #define MAX_ACCEL_MPS2   8.0f   // example: 0.5 m/s^2
 
@@ -123,12 +123,9 @@ typedef struct {
 #define LEN_ODOM       (sizeof(float)*5)   // 20
 #define LEN_IMU        (sizeof(float)*6)   // 24
 
-#define MPU9250_ACCEL_XOUT_H 0x3B
-
 #define CMD_TIMEOUT_MS          550U   // if no valid cmd for 250ms -> ramp to stop
 #define RX_PAYLOAD_TIMEOUT_MS   200U   // if header received but payload not completed in 50ms -> resync
 #define UART_TX_TIMEOUT_MS      5U     // keep control loop responsive under serial backpressure
-
 
 /* USER CODE END PD */
 
@@ -161,7 +158,6 @@ volatile float speed_R = 0.0f;     // m/s  (right wheel)
 volatile float cmd_v = 0.0f;   // m/s commanded
 volatile float cmd_w = 0.0f;   // rad/s commanded
 volatile uint32_t last_cmd_ms = 0;
-
 
 // Encoder interfaces
 static encoder_if_t enc_motor_L_if = {0};
@@ -196,14 +192,7 @@ float robot_Theta = 0.0f; // rad
 static float i_term_L = 0.0f;
 static float i_term_R = 0.0f;
 
-
-
-// ±2 g, ±250 dps on MPU‑9250
-static const float ACCEL_SENSE = 16384.0f;   // LSB/g
-static const float GYRO_SENSE  = 131.0f;     // LSB/(deg/s)
-
 // uint8_t rxPacket[9];  // 1 header + 8 bytes for two floats
-
 float v = 0.0f; // velocity m/s
 float w = 0.0f; // angular velocity rad/s
 
@@ -215,7 +204,6 @@ typedef struct { // IMU data structure
 	float gx, gy, gz;    // rad/s
 } IMU_Data_t;
 
-extern sh2_Hal_t sh2Hal;
 
 /* USER CODE END PV */
 
@@ -312,65 +300,133 @@ void Motors_Init(void)
 	enc_prev_L = 0;
 	enc_prev_R = 0;
 }
+// BNO08x State Variables
+static uint8_t seq_nums[6] = {0};
+static uint8_t pkt_buf[256];
+static IMU_Data_t current_imu_data = {0}; // Stores latest readings for your TX loop
 
+// Little-endian conversion helper
+static int16_t le16(const uint8_t *p) {
+    return (int16_t)(((uint16_t)p[1] << 8) | p[0]);
+}
+
+// BNO08x Write Helper
+static HAL_StatusTypeDef bno_write_packet(uint8_t channel, const uint8_t *data, uint16_t data_len) {
+    uint8_t pkt[32];
+    uint16_t total_len = data_len + 4;
+    if (total_len > sizeof(pkt)) return HAL_ERROR;
+
+    pkt[0] = (uint8_t)(total_len & 0xFF);
+    pkt[1] = (uint8_t)((total_len >> 8) & 0x7F);
+    pkt[2] = channel;
+    pkt[3] = seq_nums[channel]++;
+
+    memcpy(&pkt[4], data, data_len);
+    return HAL_I2C_Master_Transmit(&hi2c3, BNO_ADDR, pkt, total_len, 100);
+}
+
+// BNO08x Feature Request Helper
+static void bno_send_set_feature(uint8_t report_id, uint32_t interval_us) {
+    uint8_t cmd[17] = {0};
+    cmd[0]  = REPORTID_SET_FEATURE_CMD;
+    cmd[1]  = report_id;
+    cmd[5]  = (uint8_t)(interval_us & 0xFF);
+    cmd[6]  = (uint8_t)((interval_us >> 8) & 0xFF);
+    cmd[7]  = (uint8_t)((interval_us >> 16) & 0xFF);
+    cmd[8]  = (uint8_t)((interval_us >> 24) & 0xFF);
+
+    bno_write_packet(BNO_CH_CONTROL, cmd, sizeof(cmd));
+}
 
 static void IMU_Init(void)
 {
-	uint8_t data;
+    if (HAL_I2C_IsDeviceReady(&hi2c3, BNO_ADDR, 3, 100) == HAL_OK) {
+        const char *msg = "BNO08x Found!\r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    } else {
+        const char *err = "IMU not found!\r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t*)err, strlen(err), 100);
+        return;
+    }
 
-	// Check WHO_AM_I (should return 0x71 for MPU9250)
-	if (HAL_I2C_Mem_Read(&hi2c3, MPU9250_ADDR, WHO_AM_I, 1, &data, 1, 100) == HAL_OK) {
-		char msg[32];
-		int len = snprintf(msg, sizeof(msg), "WHO_AM_I=0x%02X\r\n", data);
-		HAL_UART_Transmit(&huart2, (uint8_t*)msg, len, 100);
-	} else {
-		const char *err = "IMU not found!\r\n";
-		HAL_UART_Transmit(&huart2, (uint8_t*)err, strlen(err), 100);
-	}
+    HAL_Delay(300);
 
-	// Wake up the device (clear sleep bit)
-	data = 0x00;
-	HAL_I2C_Mem_Write(&hi2c3, MPU9250_ADDR, PWR_MGMT_1, 1, &data, 1, 100);
+    // Drain startup packets to prevent framing errors
+    for (int i = 0; i < 20; i++) {
+        uint8_t tmp[128];
+        HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, tmp, 128, 100);
+        HAL_Delay(10);
+    }
+    HAL_Delay(100);
 
+    // Request Accel and Gyro at 10,000 us (100Hz) to match your main loop
+    bno_send_set_feature(REPORTID_ACCELEROMETER, 10000);
+    HAL_Delay(50);
+    bno_send_set_feature(REPORTID_GYROSCOPE, 10000);
+    HAL_Delay(50);
 }
 
 IMU_Data_t Read_IMU(void)
 {
-	IMU_Data_t d;
-	uint8_t buf[14];
+    uint8_t hdr[4];
 
-	if (HAL_I2C_Mem_Read(&hi2c3, MPU9250_ADDR, MPU9250_ACCEL_XOUT_H,
-			I2C_MEMADD_SIZE_8BIT, buf, sizeof(buf), 100) != HAL_OK)
-	{
-		// If read failed, zero values
-		d.ax = d.ay = d.az = 0.0f;
-		d.gx = d.gy = d.gz = 0.0f;
-		return d;
-	}
+    // 1. Read header to get length
+    if (HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, hdr, 4, 10) != HAL_OK) {
+        return current_imu_data; // return last known data if busy/failed
+    }
 
-	// Convert raw values
-	int16_t raw_ax = (buf[0] << 8) | buf[1];
-	int16_t raw_ay = (buf[2] << 8) | buf[3];
-	int16_t raw_az = (buf[4] << 8) | buf[5];
-	int16_t raw_gx = (buf[8] << 8) | buf[9];
-	int16_t raw_gy = (buf[10] << 8) | buf[11];
-	int16_t raw_gz = (buf[12] << 8) | buf[13];
+    uint16_t pkt_len = ((uint16_t)(hdr[1] & 0x7F) << 8) | hdr[0];
+    if (pkt_len <= 4 || pkt_len == 0xFFFF) {
+        return current_imu_data; // empty or invalid length
+    }
 
-	// Accel → m/s^2
-	d.ax = (raw_ax / ACCEL_SENSE) * 9.80665f;
-	d.ay = (raw_ay / ACCEL_SENSE) * 9.80665f;
-	d.az = (raw_az / ACCEL_SENSE) * 9.80665f; // weird ass persistent bias removal
+    // 2. Read full packet
+    if (pkt_len > sizeof(pkt_buf)) pkt_len = sizeof(pkt_buf);
+    if (HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, pkt_buf, pkt_len, 20) != HAL_OK) {
+        return current_imu_data;
+    }
 
-	// Gyro → rad/s
-	float gx_dps = raw_gx / GYRO_SENSE;
-	float gy_dps = raw_gy / GYRO_SENSE;
-	float gz_dps = raw_gz / GYRO_SENSE;
+    uint8_t channel = pkt_buf[2];
+    uint16_t cargo_len = pkt_len - 4;
+    uint8_t *cargo = &pkt_buf[4];
 
-	d.gx = gx_dps * (float)M_PI / 180.0f;
-	d.gy = gy_dps * (float)M_PI / 180.0f;
-	d.gz = gz_dps * (float)M_PI / 180.0f;
+    // We only care about Input Reports
+    if (channel != BNO_CH_INPUT_REPORTS || cargo_len < 5) {
+        return current_imu_data;
+    }
 
-	return d;
+    uint16_t offset = 0;
+
+    // Skip timebase reference if present
+    if (cargo[offset] == 0xFB && cargo_len >= 5) {
+        offset += 5;
+    }
+
+    // 3. Parse concatenated sensor reports
+    while (offset + 10 <= cargo_len) {
+        uint8_t rid = cargo[offset];
+        int16_t x = le16(&cargo[offset + 4]);
+        int16_t y = le16(&cargo[offset + 6]);
+        int16_t z = le16(&cargo[offset + 8]);
+
+        if (rid == REPORTID_ACCELEROMETER) {
+            current_imu_data.ax = x / 256.0f;
+            current_imu_data.ay = y / 256.0f;
+            current_imu_data.az = z / 256.0f;
+            offset += 10;
+        }
+        else if (rid == REPORTID_GYROSCOPE) {
+            current_imu_data.gx = x / 512.0f;
+            current_imu_data.gy = y / 512.0f;
+            current_imu_data.gz = z / 512.0f;
+            offset += 10;
+        }
+        else {
+            break; // Stop parsing if we hit a report we didn't request
+        }
+    }
+
+    return current_imu_data;
 }
 
 static inline void encoder_if_reset(encoder_if_t *e)
@@ -505,7 +561,7 @@ void Control_Update(void)
 
 		// Calculate robot angular velocity (w) from the horizontal wheel
 		// (Assuming Vy = 0 due to non-holonomic constraints)
-		float w_robot = vH_odom / DW_H_OFFSET_X;
+		float w_robot = current_imu_data.gz;
 
 		// Calculate forward velocity (Vx) from the straight wheel
 		float v_robot = vS_odom + (w_robot * DW_S_OFFSET_Y);
@@ -678,24 +734,6 @@ int main(void)
   MX_TIM14_Init();
   MX_TIM15_Init();
   /* USER CODE BEGIN 2 */
-
-  // 1. Open the sensor hub
-    if (sh2_open(&sh2Hal, NULL, NULL) != SH2_OK) {
-        // Handle Error: Sensor didn't open
-        Error_Handler();
-    }
-
-    // 2. Configure the sensor to output Game Rotation Vectors at 100Hz (10,000 microseconds)
-      sh2_SensorConfig_t config;
-      config.changeSensitivityEnabled = false;
-      config.wakeupEnabled = false;
-      config.changeSensitivityRelative = false;
-      config.alwaysOnEnabled = false;
-      config.changeSensitivity = 0;
-      config.reportInterval_us = 10000; // 100 Hz
-      config.batchInterval_us = 0;
-
-      sh2_setSensorConfig(SH2_GAME_ROTATION_VECTOR, &config);
 
 	Motors_Init(); // Start these motors dih
 	IMU_Init(); // ts pmo sybau

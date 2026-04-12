@@ -1,17 +1,21 @@
-19:07:17 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+20:06:51 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'Control_Update':
+../Core/Src/main.c:560:23: warning: unused variable 'vH_odom' [-Wunused-variable]
+  560 |                 float vH_odom = counts_to_linear_mps(dDwH, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
+      |                       ^~~~~~~
 arm-none-eabi-gcc -o "SAGE_MCU.elf" @"objects.list"   -mcpu=cortex-m0plus -T"C:\Users\Aidan\Documents\GitHub\SAGE_ROBOT\SAGE_MCU\STM32G0B1RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SAGE_MCU.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 Finished building target: SAGE_MCU.elf
  
 arm-none-eabi-size  SAGE_MCU.elf 
 arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
    text	   data	    bss	    dec	    hex	filename
-  70012	    488	   5464	  75964	  128bc	SAGE_MCU.elf
+  64148	    468	   3012	  67628	  1082c	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 Finished building: SAGE_MCU.list
  
 
-19:07:19 Build Finished. 0 errors, 0 warnings. (took 1s.575ms)
+20:06:52 Build Finished. 0 errors, 1 warnings. (took 1s.351ms)
 
