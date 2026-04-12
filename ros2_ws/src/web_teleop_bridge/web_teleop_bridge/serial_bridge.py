@@ -136,6 +136,14 @@ class SerialBridge(Node):
     def on_cmd_vel(self, msg: Twist):
         v = float(msg.linear.x)
         w = float(msg.angular.z)
+
+        min_inplace_w = 0.30
+        stationary_v_thresh = 0.05
+
+        # If robot is basically not translating, enforce a minimum usable turn speed
+        if abs(v) < stationary_v_thresh and 0.0 < abs(w) < min_inplace_w:
+            w = min_inplace_w if w > 0.0 else -min_inplace_w
+        
         # keep your existing binary TX format: 0x78 'x' + v + w (float32 little-endian)
         pkt = struct.pack('<Bff', 0x78, v, w)
         try:

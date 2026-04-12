@@ -221,6 +221,11 @@ class SageApp:
             on_recording_start=self._on_recording_start,
             on_recording_stop=self._on_recording_stop,
             no_log_file=True,
+            start_callback_in_new_thread=True,
+            silero_sensitivity=cfg.silero_sensitivity,
+            silero_use_onnx=cfg.silero_use_onnx,
+            silero_deactivity_detection=cfg.silero_deactivity_detection,
+            max_recording_duration=cfg.max_recording_duration,
         )
 
         if cfg.use_wakeword:

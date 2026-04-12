@@ -19,7 +19,7 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
 
-  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sagewithimu.urdf.xacro)
+  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)
 
   ros2 run robot_state_publisher robot_state_publisher \
     --ros-args -p robot_description:=\"\$DESCRIPTION\" \
@@ -43,26 +43,18 @@ tmux new-window -t "$SESSION" -n "Video Server" "bash -lc '
   exec bash
 '"
 
-# 2) Static Files on :8001 
-tmux new-window -t "$SESSION" -n "Static Files" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT/signaling/static
-  /usr/bin/python3 -m http.server 8001 || { echo http.server failed; sleep 5; }
-  exec bash
-'"
-
-# 3) Signaling server (venv)
-tmux new-window -t "$SESSION" -n "Signaling" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT/signaling
-  source .signaling_venv/bin/activate
-  python signaling_server.py || { echo signaling_server failed; sleep 5; }
-  exec bash
-'"
-
-# 4) Teleop Bridge
-tmux new-window -t "$SESSION" -n "Teleop Bridge" "bash -lc '
+# 3) Web Bridge
+tmux new-window -t "$SESSION" -n "Web Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   ros2 run web_teleop_bridge control_bridge || { echo control_bridge failed; sleep 5; }
+  exec bash
+'"
+
+# 4) Teleop Inteface :8001 
+tmux new-window -t "$SESSION" -n "Teleop Web" "bash -lc '
+  cd $HOME/Desktop/SAGE_ROBOT/interface/teleop_interface
+  /usr/bin/python3 -m http.server 8001 || { echo teleop interface failed; sleep 5; }
   exec bash
 '"
 
@@ -70,7 +62,9 @@ tmux new-window -t "$SESSION" -n "Teleop Bridge" "bash -lc '
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  ros2 run web_teleop_bridge serial_bridge_with_imu || { echo serial_bridge failed; sleep 5; }
+  source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
+  which python3
+  ros2 run web_teleop_bridge serial_bridge || { echo serial_bridge failed; sleep 5; }
   exec bash
 '"
 

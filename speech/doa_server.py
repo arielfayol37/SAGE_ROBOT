@@ -106,12 +106,13 @@ async def _doa_reader_loop(interval: float) -> None:
 
     while True:
         try:
+            offset = 35.0
             if dev is not None:
                 _, _, _, auto_sel = _read_aec_azimuth(dev)
-                _last_angle = (math.degrees(auto_sel) + 360.0) % 360.0
+                _last_angle = (math.degrees(auto_sel) + 360.0 + offset) % 360.0
             else:
                 _last_angle = sim_angle
-
+            
             msg = json.dumps({"type": "doa", "angle_deg": round(_last_angle, 2)})
             dead: Set[_WSConn] = set()
             for ws in list(_clients):

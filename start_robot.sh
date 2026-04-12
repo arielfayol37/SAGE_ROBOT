@@ -19,7 +19,7 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
 
-  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sagewithimu.urdf.xacro)
+  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)
 
   ros2 run robot_state_publisher robot_state_publisher \
     --ros-args -p robot_description:=\"\$DESCRIPTION\" \
@@ -72,14 +72,14 @@ tmux new-window -t "$SESSION" -n "Status Web" "bash -lc '
   exec bash
 '"
 
-# 7) Serial Bridge
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
+  source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
+  which python3
   ros2 run web_teleop_bridge serial_bridge || { echo serial_bridge failed; sleep 5; }
   exec bash
 '"
-
 # 8) EKF (odom filter)
 tmux new-window -t "$SESSION" -n "EKF (odom filter)" "bash -lc '
   source $ROS_SETUP || true

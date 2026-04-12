@@ -19,7 +19,7 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
 
-  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)
+  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sagewithoutimu.urdf.xacro)
 
   ros2 run robot_state_publisher robot_state_publisher \
     --ros-args -p robot_description:=\"\$DESCRIPTION\" \
@@ -28,41 +28,32 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   exec bash
 '"
 
-
-# 0) Camera
+# 1) Camera
 tmux new-window -t "$SESSION" -n "Camera" "bash -lc '
   source $ROS_SETUP || true
   ros2 run v4l2_camera v4l2_camera_node --ros-args -p image_size:=[480,270] || { echo Camera failed; sleep 5; }
   exec bash
 '"
 
-# 1) Video Server
+# 2) Video Server
 tmux new-window -t "$SESSION" -n "Video Server" "bash -lc '
   source $ROS_SETUP || true
   ros2 run web_video_server web_video_server || { echo web_video_server failed; sleep 5; }
   exec bash
 '"
 
-# 2) Static Files on :8001 
-tmux new-window -t "$SESSION" -n "Static Files" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT/signaling/static
-  /usr/bin/python3 -m http.server 8001 || { echo http.server failed; sleep 5; }
-  exec bash
-'"
-
-# 3) Signaling server (venv)
-tmux new-window -t "$SESSION" -n "Signaling" "bash -lc '
-  cd $HOME/Desktop/SAGE_ROBOT/signaling
-  source .signaling_venv/bin/activate
-  python signaling_server.py || { echo signaling_server failed; sleep 5; }
-  exec bash
-'"
-
-# 4) Teleop Bridge
-tmux new-window -t "$SESSION" -n "Teleop Bridge" "bash -lc '
+# 3) Web Bridge
+tmux new-window -t "$SESSION" -n "Web Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   ros2 run web_teleop_bridge control_bridge || { echo control_bridge failed; sleep 5; }
+  exec bash
+'"
+
+# 4) Teleop Inteface :8001 
+tmux new-window -t "$SESSION" -n "Teleop Web" "bash -lc '
+  cd $HOME/Desktop/SAGE_ROBOT/interface/teleop_interface
+  /usr/bin/python3 -m http.server 8001 || { echo teleop interface failed; sleep 5; }
   exec bash
 '"
 
@@ -70,13 +61,13 @@ tmux new-window -t "$SESSION" -n "Teleop Bridge" "bash -lc '
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
-  ros2 run web_teleop_bridge serial_bridge || { echo serial_bridge failed; sleep 5; }
+  source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
+  which python3
+  ros2 run web_teleop_bridge serial_bridge_without_imu || { echo serial_bridge failed; sleep 5; }
   exec bash
 '"
 
-
-
-# 7) Lidar Scan publisher
+# 6) Lidar Scan publisher
 tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -84,7 +75,7 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   exec bash
 '"
 
-# 8) Map Publisher (plus localization)
+# 7) Map Publisher (plus localization)
 tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -92,7 +83,7 @@ tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
   exec bash
 '"
 
-# 9) Nav2
+# 8) Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
