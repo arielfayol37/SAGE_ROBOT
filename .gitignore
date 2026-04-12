@@ -47,3 +47,6 @@ knowledge_base/postgres_db
 # (optional) local model directories
 backend/models/
 backend/
+
+# Tests
+speech/tests/
