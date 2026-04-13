@@ -3,14 +3,14 @@ Push-to-talk web interface for SAGE (default port 8005).
 
 Serves a mobile-friendly hold-to-talk page.  Audio is recorded in the
 browser via MediaRecorder, POSTed as WebM, converted to 16 kHz mono
-WAV by ffmpeg, and transcribed locally with faster_whisper  the same
+WAV by ffmpeg, and transcribed locally with faster_whisper  the same
 engine the on-robot STT uses.  The transcribed text is then fed into
 the normal SAGE LLM pipeline so the robot responds via TTS.
 
 Dependencies (all already present on the robot):
     pip install fastapi uvicorn faster-whisper soundfile numpy
 
-Start-up is handled by SageApp  see ``main.py``.
+Start-up is handled by SageApp  see ``main.py``.
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ def _audio_bytes_to_float32(audio_bytes: bytes) -> Optional[np.ndarray]:
         return audio
 
     except FileNotFoundError:
-        _log.error("ffmpeg not found  install it: sudo apt install ffmpeg")
+        _log.error("ffmpeg not found  install it: sudo apt install ffmpeg")
         return None
     except Exception:
         _log.exception("Audio conversion error")
@@ -130,7 +130,7 @@ def create_app(sage_app: Any, device: str = "cpu") -> FastAPI:
         The running :class:`main.SageApp` instance (used to inject
         transcribed text into ``_process_user_input``).
     device:
-        ``"cuda"`` or ``"cpu"``  passed to faster_whisper.
+        ``"cuda"`` or ``"cpu"``  passed to faster_whisper.
     """
     api = FastAPI(title="SAGE Push-to-Talk", docs_url=None, redoc_url=None)
     whisper_model_name = sage_app.cfg.stt.whisper_model
@@ -186,6 +186,27 @@ def create_app(sage_app: Any, device: str = "cpu") -> FastAPI:
             "transcribe_ms": int(t_transcribe * 1000),
         }
 
+    @api.post("/api/chat")
+    async def chat(payload: dict):
+        """Accept a text message and feed it directly to SAGE (no STT)."""
+        text = (payload.get("text") or "").strip()
+        if not text:
+            return JSONResponse(
+                {"error": "Empty message"}, status_code=400,
+            )
+
+        _log.info("Web chat: %s", text)
+
+        loop = asyncio.get_event_loop()
+        reply = await loop.run_in_executor(
+            None, sage_app._process_user_input, text,
+        )
+
+        return {
+            "user_text": text,
+            "reply": reply or "",
+        }
+
     return api
 
 
@@ -237,7 +258,7 @@ class PushToTalkServer:
 
     Serves over HTTPS with an auto-generated self-signed certificate so
     that browsers allow microphone access from non-localhost origins.
-    On first connect the phone will show a "not secure" warning  tap
+    On first connect the phone will show a "not secure" warning  tap
     "Advanced � Proceed" once and it will be remembered.
     """
 
@@ -321,11 +342,16 @@ body{
   box-shadow:0 0 8px var(--success);
   animation:pulse-dot 2s ease-in-out infinite;
 }
+.dot.disconnected{
+  background:var(--danger);
+  box-shadow:0 0 8px var(--danger);
+  animation:none;
+}
 @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
 
 /*  status  */
 .status-bar{
-  margin-bottom:48px;text-align:center;
+  margin-bottom:32px;text-align:center;
 }
 .status-text{
   font-size:.85rem;font-weight:500;color:var(--text-dim);
@@ -338,7 +364,7 @@ body{
 
 /*  mic button  */
 .mic-wrap{
-  position:relative;width:160px;height:160px;
+  position:relative;width:140px;height:140px;
   display:flex;align-items:center;justify-content:center;
 }
 .mic-ring{
@@ -354,7 +380,7 @@ body{
 @keyframes ring-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 
 .mic-btn{
-  width:120px;height:120px;border-radius:50%;border:none;
+  width:104px;height:104px;border-radius:50%;border:none;
   background:linear-gradient(145deg,#1a2030,#141824);
   box-shadow:4px 4px 16px rgba(0,0,0,.6),-2px -2px 12px rgba(255,255,255,.03);
   display:flex;align-items:center;justify-content:center;
@@ -366,43 +392,81 @@ body{
   background:linear-gradient(145deg,#1e1525,#1a1020);
 }
 .mic-btn svg{
-  width:40px;height:40px;
+  width:36px;height:36px;
   fill:none;stroke:var(--text-dim);stroke-width:1.8;
   stroke-linecap:round;stroke-linejoin:round;
   transition:stroke .3s;
 }
 .mic-btn.recording svg{stroke:var(--danger)}
 
-/*  response card  */
+/*  response area  */
 .response{
-  margin-top:48px;width:min(90vw,400px);
-  max-height:35vh;overflow-y:auto;
+  margin-top:24px;width:min(92vw,420px);
+  max-height:30vh;overflow-y:auto;
+  scrollbar-width:thin;
+  scrollbar-color:var(--border) transparent;
 }
 .card{
   background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius);padding:16px 20px;
-  margin-bottom:12px;
+  border-radius:var(--radius);padding:14px 18px;
+  margin-bottom:10px;
   animation:slide-up .35s ease-out;
 }
 @keyframes slide-up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .card-label{
-  font-family:var(--font-mono);font-size:.65rem;font-weight:700;
+  font-family:var(--font-mono);font-size:.6rem;font-weight:700;
   letter-spacing:.1em;text-transform:uppercase;
-  color:var(--text-dim);margin-bottom:6px;
+  color:var(--text-dim);margin-bottom:5px;
 }
 .card-text{
-  font-size:.92rem;line-height:1.55;color:var(--text);font-weight:300;
+  font-size:.9rem;line-height:1.55;color:var(--text);font-weight:300;
 }
 .card.user{border-left:3px solid var(--accent)}
 .card.sage{border-left:3px solid var(--success)}
 .card.sage .card-label{color:var(--success)}
 .card.user .card-label{color:var(--accent)}
 
-/*  hint  */
-.hint{
-  position:absolute;bottom:32px;
-  font-size:.75rem;color:var(--text-dim);letter-spacing:.04em;
+/*  chat input bar  */
+.chat-bar{
+  position:absolute;bottom:0;left:0;right:0;
+  padding:12px 16px;padding-bottom:max(12px,env(safe-area-inset-bottom));
+  background:linear-gradient(to top,var(--bg) 60%,transparent);
+  display:flex;align-items:center;gap:10px;
 }
+.chat-input{
+  flex:1;
+  font-family:var(--font-display);font-size:.9rem;
+  background:var(--surface);color:var(--text);
+  border:1px solid var(--border);border-radius:24px;
+  padding:12px 18px;
+  outline:none;
+  transition:border-color .2s;
+}
+.chat-input::placeholder{color:var(--text-dim);opacity:.6}
+.chat-input:focus{border-color:var(--accent)}
+.send-btn{
+  width:44px;height:44px;border-radius:50%;border:none;
+  background:var(--accent);color:#080a0f;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:transform .1s,opacity .2s;
+  flex-shrink:0;
+}
+.send-btn:active{transform:scale(.9)}
+.send-btn:disabled{opacity:.3;cursor:default}
+.send-btn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+/*  reconnect banner  */
+.reconnect-banner{
+  display:none;
+  position:absolute;top:56px;left:50%;transform:translateX(-50%);
+  background:rgba(244,63,94,.12);border:1px solid rgba(244,63,94,.25);
+  border-radius:10px;padding:8px 16px;
+  font-size:.78rem;color:var(--danger);
+  text-align:center;cursor:pointer;
+  animation:slide-up .3s ease-out;
+  z-index:10;
+}
+.reconnect-banner.show{display:block}
 
 /*  loading dots  */
 .dots span{animation:blink 1.4s infinite both}
@@ -416,6 +480,10 @@ body{
 <div class="header">
   <div class="dot" id="dot"></div>
   <div class="logo">SAGE</div>
+</div>
+
+<div class="reconnect-banner" id="reconBanner">
+  Mic disconnected &mdash; tap to reconnect
 </div>
 
 <div class="status-bar">
@@ -435,56 +503,131 @@ body{
 </div>
 
 <div class="response" id="response"></div>
-<div class="hint">hold the mic button &middot; release to send</div>
+
+<div class="chat-bar">
+  <input class="chat-input" id="chatInput" type="text"
+         placeholder="Type a message..." autocomplete="off"/>
+  <button class="send-btn" id="sendBtn" aria-label="Send message">
+    <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+  </button>
+</div>
 
 <script>
-const mic   = document.getElementById('mic');
-const ring  = document.getElementById('ring');
-const status = document.getElementById('status');
-const resp  = document.getElementById('response');
+const mic      = document.getElementById('mic');
+const ring     = document.getElementById('ring');
+const status   = document.getElementById('status');
+const resp     = document.getElementById('response');
+const dot      = document.getElementById('dot');
+const banner   = document.getElementById('reconBanner');
+const chatIn   = document.getElementById('chatInput');
+const sendBtn  = document.getElementById('sendBtn');
 
-let mediaRec = null;
-let chunks   = [];
+let mediaRec  = null;
+let chunks    = [];
 let recording = false;
-let stream   = null;
+let stream    = null;
+let sending   = false;   // lock to prevent double-sends
+
+/* ---- helpers ---- */
 
 function setStatus(msg, cls='') {
   status.textContent = msg;
   status.className = 'status-text' + (cls ? ' '+cls : '');
 }
 
-function dots(msg) {
+function dotsHtml(msg) {
   return msg + '<span class="dots"><span>.</span><span>.</span><span>.</span></span>';
 }
 
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function showCards(userText, replyText) {
+  resp.innerHTML =
+    `<div class="card user">
+       <div class="card-label">You</div>
+       <div class="card-text">${esc(userText)}</div>
+     </div>
+     <div class="card sage">
+       <div class="card-label">SAGE</div>
+       <div class="card-text">${esc(replyText || '(no reply)')}</div>
+     </div>`;
+}
+
+/* ---- mic stream management ---- */
+
+function isStreamAlive() {
+  if (!stream) return false;
+  return stream.getTracks().every(t => t.readyState === 'live');
+}
+
+async function ensureStream() {
+  if (isStreamAlive()) return true;
+  // Previous stream died (tab backgrounded, BT headset lost, etc.)
+  // Release the old one fully before requesting fresh access.
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount:1, sampleRate:16000, echoCancellation:true, noiseSuppression:true }
+    });
+    // Watch for future disconnects
+    stream.getTracks().forEach(t => {
+      t.onended = () => showDisconnected();
+    });
+    hideDisconnected();
+    return true;
+  } catch(e) {
+    console.error('Mic access error', e);
+    setStatus('Mic access denied', 'error');
+    return false;
+  }
+}
+
+function showDisconnected() {
+  dot.classList.add('disconnected');
+  banner.classList.add('show');
+}
+
+function hideDisconnected() {
+  dot.classList.remove('disconnected');
+  banner.classList.remove('show');
+}
+
+banner.addEventListener('click', async () => {
+  banner.classList.remove('show');
+  setStatus('Reconnecting\u2026', 'active');
+  const ok = await ensureStream();
+  if (ok) setStatus('Hold to talk');
+  else setStatus('Could not reconnect mic', 'error');
+});
+
+/* ---- voice recording ---- */
+
 async function startRecording() {
   if (recording) return;
-  try {
-    // Request mic on first press
-    if (!stream) {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount:1, sampleRate:16000, echoCancellation:true, noiseSuppression:true }
-      });
-    }
 
-    chunks = [];
-    // Prefer webm/opus; fall back to whatever the browser supports
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+  const ok = await ensureStream();
+  if (!ok) return;
 
-    mediaRec = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-    mediaRec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-    mediaRec.start(100); // collect in 100ms chunks
-    recording = true;
+  chunks = [];
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus'
+    : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
 
-    mic.classList.add('recording');
-    ring.classList.add('recording');
-    setStatus('Listening\u2026', 'active');
-  } catch(e) {
-    setStatus('Mic access denied', 'error');
-    console.error(e);
-  }
+  mediaRec = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+  mediaRec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  mediaRec.start(100);
+  recording = true;
+
+  mic.classList.add('recording');
+  ring.classList.add('recording');
+  setStatus('Listening\u2026', 'active');
 }
 
 async function stopRecording() {
@@ -503,8 +646,11 @@ async function stopRecording() {
   });
 }
 
-async function send(blob) {
-  status.innerHTML = dots('Transcribing');
+async function sendAudio(blob) {
+  if (sending) return;
+  sending = true;
+
+  status.innerHTML = dotsHtml('Transcribing');
   status.className = 'status-text active';
 
   const form = new FormData();
@@ -519,31 +665,72 @@ async function send(blob) {
       return;
     }
 
-    // Show result cards
-    resp.innerHTML =
-      `<div class="card user">
-         <div class="card-label">You</div>
-         <div class="card-text">${esc(data.user_text)}</div>
-       </div>
-       <div class="card sage">
-         <div class="card-label">SAGE</div>
-         <div class="card-text">${esc(data.reply || '(no reply)')}</div>
-       </div>`;
-
+    showCards(data.user_text, data.reply);
     setStatus('Hold to talk');
   } catch(e) {
     setStatus('Network error', 'error');
     console.error(e);
+  } finally {
+    sending = false;
   }
 }
 
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
+/* ---- text chat ---- */
+
+async function sendText() {
+  const text = chatIn.value.trim();
+  if (!text || sending) return;
+
+  sending = true;
+  chatIn.value = '';
+  chatIn.blur();
+
+  status.innerHTML = dotsHtml('Thinking');
+  status.className = 'status-text active';
+
+  try {
+    const r = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await r.json();
+
+    if (!r.ok) {
+      setStatus(data.error || 'Error', 'error');
+      return;
+    }
+
+    showCards(data.user_text, data.reply);
+    setStatus('Hold to talk');
+  } catch(e) {
+    setStatus('Network error', 'error');
+    console.error(e);
+  } finally {
+    sending = false;
+  }
 }
 
-//  pointer events (work on both touch + mouse) 
+sendBtn.addEventListener('click', sendText);
+chatIn.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendText();
+  }
+});
+
+// Allow selecting text input without triggering user-select:none
+chatIn.addEventListener('focus', () => {
+  document.body.style.webkitUserSelect = 'text';
+  document.body.style.userSelect = 'text';
+});
+chatIn.addEventListener('blur', () => {
+  document.body.style.webkitUserSelect = 'none';
+  document.body.style.userSelect = 'none';
+});
+
+/* ---- pointer events (voice) ---- */
+
 mic.addEventListener('pointerdown', e => {
   e.preventDefault();
   mic.setPointerCapture(e.pointerId);
@@ -552,16 +739,22 @@ mic.addEventListener('pointerdown', e => {
 mic.addEventListener('pointerup', async e => {
   e.preventDefault();
   const blob = await stopRecording();
-  if (blob && blob.size > 500) send(blob);
-  else setStatus('Too short  hold longer', 'error');
+  if (blob && blob.size > 500) sendAudio(blob);
+  else setStatus('Too short \u2014 hold longer', 'error');
 });
 mic.addEventListener('pointercancel', async () => {
   await stopRecording();
   setStatus('Cancelled', 'error');
 });
-
-// Prevent context menu on long press (mobile)
 mic.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---- visibility change: detect backgrounding ---- */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && stream && !isStreamAlive()) {
+    showDisconnected();
+    setStatus('Mic disconnected', 'error');
+  }
+});
 </script>
 </body>
 </html>
