@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# serial_bridge_no_imu.py
+# serial_bridge_without_imu.py
 #
 # Host -> MCU  : 0x78 + <ff>                      # v, w   (same TX format you already use)
 # MCU  -> Host : [0x7E][TYPE=0x02][LEN=20][<fffff>]
