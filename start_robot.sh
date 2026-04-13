@@ -19,7 +19,7 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
 
-  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)
+  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sagewithoutimu.urdf.xacro)
 
   ros2 run robot_state_publisher robot_state_publisher \
     --ros-args -p robot_description:=\"\$DESCRIPTION\" \
@@ -34,7 +34,6 @@ tmux new-window -t "$SESSION" -n "Valpo KB" "bash -lc '
   docker compose up -d || { echo Valpo KB server failed; sleep 5; }
   exec bash
 '"
-
 
 # 2) Camera
 tmux new-window -t "$SESSION" -n "Camera" "bash -lc '
@@ -72,34 +71,17 @@ tmux new-window -t "$SESSION" -n "Status Web" "bash -lc '
   exec bash
 '"
 
+# 7) Serial Bridge
 tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
   which python3
-  ros2 run web_teleop_bridge serial_bridge || { echo serial_bridge failed; sleep 5; }
-  exec bash
-'"
-# 8) EKF (odom filter)
-tmux new-window -t "$SESSION" -n "EKF (odom filter)" "bash -lc '
-  source $ROS_SETUP || true
-  source $WS_SETUP || true
-
-  # Wait until upstream topics exist (Serial Bridge up)
-  echo \"[EKF] waiting for /imu/data and /odom...\"
-  until ros2 topic list | grep -q \"^/imu/data\$\"; do sleep 0.5; done
-  until ros2 topic list | grep -q \"^/odom\$\"; do sleep 0.5; done
-
-  # Give Serial Bridge time to finish IMU calibration
-  sleep 6
-
-  # Run EKF with matching node name so YAML applies
-  ros2 run robot_localization ekf_node --ros-args --params-file ~/Desktop/SAGE_ROBOT/config/ekf.yaml || { echo EKF failed; sleep 5; }
-
+  ros2 run web_teleop_bridge serial_bridge_without_imu || { echo serial_bridge failed; sleep 5; }
   exec bash
 '"
 
-# 9) Lidar Scan publisher
+# 8) Lidar Scan publisher
 tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -107,7 +89,7 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   exec bash
 '"
 
-# 10) Speech
+# 9) Speech
 tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -118,8 +100,7 @@ tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
   exec bash
 '"
 
-
-# 11) Map Publisher (plus localization)
+# 10) Map Publisher (plus localization)
 tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -129,7 +110,7 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   exec bash
 '"
 
-# 12) Direction of arrival server
+# 11) Direction of arrival server
 tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
   cd $HOME/Desktop/SAGE_ROBOT/speech
@@ -137,14 +118,11 @@ tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
   exec bash
 '"
 
-
-
-# 13) Nav2
+# 12) Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   ros2 launch nav2_bringup navigation_launch.py params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml use_sim_time:=false map_subscribe_transient_local:=true || { echo nav2 failed; sleep 5; }
   exec bash
 '"
-
 

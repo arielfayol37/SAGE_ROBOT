@@ -233,6 +233,12 @@
   const SEND_PERIOD_MS = 1000 / SEND_HZ;  // 20ms
   let lastSendT = 0;
 
+  // Idle suppression: stop sending after 2s of zero output
+  // so autonomous mode is not overridden by stale (0,0) commands
+  const IDLE_TIMEOUT_MS = 2000;
+  let lastNonZeroT = performance.now();  // last time output was non-zero
+  let idleSent = false;                  // true once final zero was sent after timeout
+
   /* ------- Steering wheel (horizontal only) ------- */
   attachSteering(document.getElementById('steerWheel'), (nx) => {
     const { MAX_Z } = caps();
@@ -347,10 +353,34 @@
     setBar(barX, (outX     / Math.max(1e-6, MAX_X))); // [-1,1]
     setBar(barZ, (curvedZ  / Math.max(1e-6, MAX_Z))); // [-1,1] approx
 
-    // Always send at 50Hz (heartbeat), even if unchanged
+    // --- Idle suppression logic ---
+    const isZero = (Math.abs(outX) < 1e-4) && (Math.abs(curvedZ) < 1e-4);
+
+    if (!isZero) {
+      // Active control: reset idle tracking, always send
+      lastNonZeroT = now;
+      idleSent = false;
+    }
+
+    const idleMs = now - lastNonZeroT;
+
     if (now - lastSendT >= SEND_PERIOD_MS) {
-      send(outX, curvedZ);
-      lastSendT = now;
+      if (!isZero) {
+        // Non-zero output: always send at 50 Hz
+        send(outX, curvedZ);
+        lastSendT = now;
+      } else if (idleMs < IDLE_TIMEOUT_MS) {
+        // Zero output but within grace period: keep sending (0,0)
+        // so robot brakes cleanly from a prior command
+        send(0, 0);
+        lastSendT = now;
+      } else if (!idleSent) {
+        // Grace period elapsed: send one final (0,0) then go silent
+        send(0, 0);
+        lastSendT = now;
+        idleSent = true;
+      }
+      // else: idle and already sent final zero -> send nothing
     }
 
     requestAnimationFrame(loop);
@@ -362,16 +392,14 @@
     targetX = 0; targetZ = 0;
     outX = 0; outZ = 0;
     lastSendT = 0;          // allow immediate send after zero()
+    idleSent = false;        // ensure the final zero actually gets sent
+    lastNonZeroT = 0;        // treat as long-idle so final zero sends immediately
     send(0,0);
     gasFill.style.width = "0%";
     revFill.style.width = "0%";
   }
   document.addEventListener('visibilitychange', ()=>{ if (document.hidden) zero(); });
   window.addEventListener('blur', zero);
-
-  // Example expected behavior:
-  // - Hold GAS steady -> websocket sends ~50 msgs/sec with same x,z.
-  // - No input -> still sends ~50 msgs/sec with (0,0) after slew settles.
 })();
 </script>
 </body>

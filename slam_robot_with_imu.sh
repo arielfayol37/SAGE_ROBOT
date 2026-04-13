@@ -19,7 +19,7 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
 
-  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sagewithoutimu.urdf.xacro)
+  DESCRIPTION=\$(xacro \$HOME/Desktop/SAGE_ROBOT/description/sage.urdf.xacro)
 
   ros2 run robot_state_publisher robot_state_publisher \
     --ros-args -p robot_description:=\"\$DESCRIPTION\" \
@@ -28,14 +28,15 @@ tmux new-session -d -s "$SESSION" -n "RS Publisher" "bash -lc '
   exec bash
 '"
 
-# 1) Camera
+
+# 0) Camera
 tmux new-window -t "$SESSION" -n "Camera" "bash -lc '
   source $ROS_SETUP || true
   ros2 run v4l2_camera v4l2_camera_node --ros-args -p image_size:=[480,270] || { echo Camera failed; sleep 5; }
   exec bash
 '"
 
-# 2) Video Server
+# 1) Video Server
 tmux new-window -t "$SESSION" -n "Video Server" "bash -lc '
   source $ROS_SETUP || true
   ros2 run web_video_server web_video_server || { echo web_video_server failed; sleep 5; }
@@ -63,11 +64,30 @@ tmux new-window -t "$SESSION" -n "Serial Bridge" "bash -lc '
   source $WS_SETUP || true
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
   which python3
-  ros2 run web_teleop_bridge serial_bridge_without_imu || { echo serial_bridge failed; sleep 5; }
+  ros2 run web_teleop_bridge serial_bridge || { echo serial_bridge failed; sleep 5; }
   exec bash
 '"
 
-# 6) Lidar Scan publisher
+# 6) EKF (odom filter)
+tmux new-window -t "$SESSION" -n "EKF (odom filter)" "bash -lc '
+  source $ROS_SETUP || true
+  source $WS_SETUP || true
+
+  # Wait until upstream topics exist (Serial Bridge up)
+  echo \"[EKF] waiting for /imu/data and /odom...\"
+  until ros2 topic list | grep -q \"^/imu/data\$\"; do sleep 0.5; done
+  until ros2 topic list | grep -q \"^/odom\$\"; do sleep 0.5; done
+
+  # Give Serial Bridge time to finish IMU calibration
+  sleep 6
+
+  # Run EKF with matching node name so YAML applies
+  ros2 run robot_localization ekf_node --ros-args --params-file ~/Desktop/SAGE_ROBOT/config/ekf.yaml || { echo EKF failed; sleep 5; }
+
+  exec bash
+'"
+
+# 7) Lidar Scan publisher
 tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -75,7 +95,7 @@ tmux new-window -t "$SESSION" -n "Scan Publisher" "bash -lc '
   exec bash
 '"
 
-# 7) Map Publisher (plus localization)
+# 8) Map Publisher (plus localization)
 tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
@@ -83,7 +103,7 @@ tmux new-window -t "$SESSION" -n "SLAM" "bash -lc '
   exec bash
 '"
 
-# 8) Nav2
+# 9) Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true

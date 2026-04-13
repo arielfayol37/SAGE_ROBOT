@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# serial_bridge_no_imu.py
+# serial_bridge_without_imu.py
 #
 # Host -> MCU  : 0x78 + <ff>                      # v, w   (same TX format you already use)
 # MCU  -> Host : [0x7E][TYPE=0x02][LEN=20][<fffff>]
@@ -96,7 +96,7 @@ class SerialBridgeNoImu(Node):
         v = float(msg.linear.x)
         w = float(msg.angular.z)
 
-        min_inplace_w = 0.30
+        min_inplace_w = 0.50
         stationary_v_thresh = 0.05
 
         # If robot is basically not translating, enforce a minimum usable turn speed
