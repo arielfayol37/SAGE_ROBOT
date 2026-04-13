@@ -137,7 +137,7 @@ class SerialBridge(Node):
         v = float(msg.linear.x)
         w = float(msg.angular.z)
 
-        min_inplace_w = 0.30
+        min_inplace_w = 0.50
         stationary_v_thresh = 0.05
 
         # If robot is basically not translating, enforce a minimum usable turn speed
