@@ -65,8 +65,6 @@ void Error_Handler(void);
 #define B1_GPIO_Port GPIOC
 #define MCO_Pin GPIO_PIN_0
 #define MCO_GPIO_Port GPIOF
-#define DeadWheel_2_A_Pin GPIO_PIN_0
-#define DeadWheel_2_A_GPIO_Port GPIOA
 #define DeadWheel_2_B_Pin GPIO_PIN_1
 #define DeadWheel_2_B_GPIO_Port GPIOA
 #define USART2_TX_Pin GPIO_PIN_2
@@ -77,8 +75,8 @@ void Error_Handler(void);
 #define LED_GREEN_GPIO_Port GPIOA
 #define Motor_Encoder_1_B_Pin GPIO_PIN_7
 #define Motor_Encoder_1_B_GPIO_Port GPIOA
-#define PWM_2_Pin GPIO_PIN_14
-#define PWM_2_GPIO_Port GPIOB
+#define DeadWheel_2_A_Pin GPIO_PIN_4
+#define DeadWheel_2_A_GPIO_Port GPIOC
 #define DeadWheel_1_A_Pin GPIO_PIN_8
 #define DeadWheel_1_A_GPIO_Port GPIOA
 #define DeadWheel_1_B_Pin GPIO_PIN_9
