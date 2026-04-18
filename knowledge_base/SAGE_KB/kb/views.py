@@ -1,4 +1,5 @@
 from django.http import JsonResponse
+from django.conf import settings
 from django.views.decorators.http import require_GET, require_POST
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from pgvector.django import CosineDistance
