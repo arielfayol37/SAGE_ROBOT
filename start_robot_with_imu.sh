@@ -137,9 +137,18 @@ tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
   exec bash
 '"
 
+# 13) Battery Watchdog
+tmux new-window -t "$SESSION" -n "Battery Watchdog" "bash -lc '
+  source $ROS_SETUP || true
+  source $WS_SETUP || true
+  source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
+  cd \$HOME/Desktop/SAGE_ROBOT/battery
+  \$HOME/Desktop/SAGE_ROBOT/.venv/bin/python battery_watchdog.py \
+    || { echo battery watchdog failed; sleep 5; }
+  exec bash
+'"
 
-
-# 13) Nav2
+# 14) Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
