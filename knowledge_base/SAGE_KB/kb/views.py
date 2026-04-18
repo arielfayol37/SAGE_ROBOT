@@ -1,8 +1,10 @@
 from django.http import JsonResponse
+from django.conf import settings
 from django.views.decorators.http import require_GET, require_POST
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from pgvector.django import CosineDistance
-
+from django.views.decorators.csrf import csrf_exempt
+from django.core.mail import send_mass_mail
 from .models import Chunk, EmailRecipient
 from .embedders import get_embedder
 import json
