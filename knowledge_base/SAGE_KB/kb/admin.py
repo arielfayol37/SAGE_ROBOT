@@ -1,5 +1,5 @@
 from django.contrib import admin, messages
-from .models import Source, Chunk
+from .models import Source, Chunk, EmailRecipient
 from .ingest import ingest_source
 from django.db.models import Count
 
@@ -59,3 +59,9 @@ class ChunkAdmin(admin.ModelAdmin):
     list_display = ("id", "source", "chunk_index", "page")
     list_filter = ("source__type",)
     search_fields = ("text",)
+
+@admin.register(EmailRecipient)
+class EmailRecipientAdmin(admin.ModelAdmin):
+    list_display = ("email", "name", "enabled", "created_at")
+    list_filter = ("enabled",)
+    search_fields = ("email", "name")

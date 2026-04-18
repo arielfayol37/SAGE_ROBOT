@@ -61,6 +61,18 @@ class Chunk(models.Model):
     def __str__(self):
         return f"Chunk {self.source_id}:{self.chunk_index}"
 
+class EmailRecipient(models.Model):
+    email = models.EmailField(unique=True)
+    name = models.CharField(max_length=255, blank=True)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["email"]
+
+    def __str__(self):
+        return f"{self.name} <{self.email}>" if self.name else self.email
+
 @receiver(post_delete, sender=Source)
 def delete_pdf_file_on_source_delete(sender, instance, **kwargs):
     if instance.pdf_file:

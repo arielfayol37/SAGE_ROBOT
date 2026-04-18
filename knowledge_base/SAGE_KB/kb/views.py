@@ -1,10 +1,11 @@
 from django.http import JsonResponse
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from pgvector.django import CosineDistance
 
-from .models import Chunk
+from .models import Chunk, EmailRecipient
 from .embedders import get_embedder
+import json
 
 
 @require_GET
@@ -100,3 +101,40 @@ def search(request):
         })
 
     return JsonResponse({"results": results})
+
+@csrf_exempt
+@require_POST
+def trigger_email_blast(request):
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+    subject = (data.get("subject") or "").strip()
+    body = (data.get("text") or "").strip()
+
+    if not subject:
+        return JsonResponse({"error": "Missing subject."}, status=400)
+
+    if not body:
+        return JsonResponse({"error": "Missing text."}, status=400)
+
+    recipients = list(
+        EmailRecipient.objects.filter(enabled=True).values_list("email", flat=True)
+    )
+
+    if not recipients:
+        return JsonResponse({"error": "No enabled recipients found."}, status=400)
+
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
+    if not from_email:
+        return JsonResponse({"error": "DEFAULT_FROM_EMAIL is not configured."}, status=500)
+
+    messages = [(subject, body, from_email, [email]) for email in recipients]
+    sent_count = send_mass_mail(messages, fail_silently=False)
+
+    return JsonResponse({
+        "success": True,
+        "sent_count": sent_count,
+        "recipients": recipients,
+    })
