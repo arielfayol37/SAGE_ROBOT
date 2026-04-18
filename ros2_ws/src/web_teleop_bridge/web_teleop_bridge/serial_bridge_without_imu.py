@@ -22,6 +22,7 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import BatteryState
 from tf2_ros import TransformBroadcaster
 from tf_transformations import quaternion_from_euler
 
@@ -29,7 +30,10 @@ SOF       = 0x7E
 TYPE_ODOM = 0x02
 FMT_ODOM  = '<fffff'      # x, y, th, v, w
 LEN_ODOM  = struct.calcsize(FMT_ODOM)
+TYPE_BATTERY = 0x04
 
+FMT_BATTERY  = '<f'          # voltage
+LEN_BATTERY  = struct.calcsize(FMT_BATTERY)
 
 class SerialBridgeNoImu(Node):
     def __init__(self):
@@ -44,7 +48,17 @@ class SerialBridgeNoImu(Node):
         self.declare_parameter('frame_base', 'base_link')
         self.declare_parameter('serial_timeout_s', 0.01)
         self.declare_parameter('rx_chunk', 128)
+        self.declare_parameter('battery_topic', '/battery_state')
+        # Optional: lets you show a % on the BatteryState message.
+        # Leave min >= max to skip percentage estimation.
+        self.declare_parameter('battery_v_min', 0.0)
+        self.declare_parameter('battery_v_max', 0.0)
+        self.declare_parameter('battery_cell_count', 0)   # 0 = unknown
 
+        self.battery_topic = self.get_parameter('battery_topic').value
+        self.battery_v_min = float(self.get_parameter('battery_v_min').value)
+        self.battery_v_max = float(self.get_parameter('battery_v_max').value)
+        self.battery_cells = int(self.get_parameter('battery_cell_count').value)
         port_param = self.get_parameter('port').value
         baud = int(self.get_parameter('baud').value)
         self.cmd_topic = self.get_parameter('cmd_topic').value
@@ -75,6 +89,7 @@ class SerialBridgeNoImu(Node):
         # ROS I/O
         self.create_subscription(Twist, self.cmd_topic, self.on_cmd_vel, 10)
         self.odom_pub = self.create_publisher(Odometry, self.odom_topic, 10)
+        self.battery_pub = self.create_publisher(BatteryState, self.battery_topic, 10)
         self.tf_broadcaster = TransformBroadcaster(self)
 
         # RX worker
@@ -96,7 +111,7 @@ class SerialBridgeNoImu(Node):
         v = float(msg.linear.x)
         w = float(msg.angular.z)
 
-        min_inplace_w = 0.50
+        min_inplace_w = 0.7
         stationary_v_thresh = 0.05
 
         # If robot is basically not translating, enforce a minimum usable turn speed
@@ -151,6 +166,8 @@ class SerialBridgeNoImu(Node):
 
                     if typ == TYPE_ODOM and ln == LEN_ODOM:
                         self._on_odom(payload)
+                    elif typ == TYPE_BATTERY and ln == LEN_BATTERY: 
+                        self._on_battery(payload)
                     else:
                         # Ignore all non-odom frames
                         continue
@@ -215,6 +232,50 @@ class SerialBridgeNoImu(Node):
         tf.transform.rotation.w = qw
 
         self.tf_broadcaster.sendTransform(tf)
+        
+    def _on_battery(self, p: bytes):
+        try:
+            (voltage,) = struct.unpack(FMT_BATTERY, p)
+        except struct.error:
+            return
+
+        msg = BatteryState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.frame_base  # or a dedicated 'battery_link' if you have one
+
+        msg.voltage = float(voltage)
+
+        # Unknowns per REP-140: report NaN rather than 0.0
+        nan = float('nan')
+        msg.temperature     = nan
+        msg.current         = nan
+        msg.charge          = nan
+        msg.capacity        = nan
+        msg.design_capacity = nan
+
+        # Optional linear percentage estimate if the user gave us min/max.
+        # Linear mapping is crude for LiPo/LiIon but fine as a dashboard readout.
+        if self.battery_v_max > self.battery_v_min:
+            pct = (voltage - self.battery_v_min) / (self.battery_v_max - self.battery_v_min)
+            msg.percentage = float(max(0.0, min(1.0, pct)))
+        else:
+            msg.percentage = nan
+
+        msg.power_supply_status     = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
+        msg.power_supply_health     = BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN
+        msg.power_supply_technology = BatteryState.POWER_SUPPLY_TECHNOLOGY_UNKNOWN
+        msg.present = True
+
+        # Per-cell info: only publish if we know the cell count.
+        if self.battery_cells > 0:
+            per_cell = voltage / self.battery_cells
+            msg.cell_voltage    = [per_cell] * self.battery_cells
+            msg.cell_temperature = [nan]      * self.battery_cells
+        else:
+            msg.cell_voltage     = []
+            msg.cell_temperature = []
+
+        self.battery_pub.publish(msg)
 
     def destroy_node(self):
         self._shutdown.set()

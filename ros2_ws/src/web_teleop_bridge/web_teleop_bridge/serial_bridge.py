@@ -21,7 +21,7 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import Imu
+from sensor_msgs.msg import Imu, BatteryState
 from tf_transformations import quaternion_from_euler
 
 SOF          = 0x7E
@@ -29,7 +29,10 @@ TYPE_CMD     = 0x01
 TYPE_ODOM    = 0x02
 TYPE_IMU     = 0x03
 TYPE_TLM     = 0x10  # reserved example for future telemetry
+TYPE_BATTERY = 0x04
 
+FMT_BATTERY  = '<f'          # voltage
+LEN_BATTERY  = struct.calcsize(FMT_BATTERY)
 FMT_CMD      = '<ff'         # v, w
 FMT_ODOM     = '<fffff'      # x, y, th, v, w
 FMT_IMU      = '<ffffff'     # gx, gy, gz, ax, ay, az
@@ -63,6 +66,17 @@ class SerialBridge(Node):
         self.declare_parameter('imu_z_positive_down', True)      # az ≈ +g at rest (your convention)
         self.declare_parameter('cov_floor_gyro', 1e-6)
         self.declare_parameter('cov_floor_accel', 1e-5)
+        self.declare_parameter('battery_topic', '/battery_state')
+        # Optional: lets you show a % on the BatteryState message.
+        # Leave min >= max to skip percentage estimation.
+        self.declare_parameter('battery_v_min', 0.0)
+        self.declare_parameter('battery_v_max', 0.0)
+        self.declare_parameter('battery_cell_count', 0)   # 0 = unknown
+
+        self.battery_topic = self.get_parameter('battery_topic').value
+        self.battery_v_min = float(self.get_parameter('battery_v_min').value)
+        self.battery_v_max = float(self.get_parameter('battery_v_max').value)
+        self.battery_cells = int(self.get_parameter('battery_cell_count').value)
 
         port = next(iter(glob.glob('/dev/ttyACM*')), '/dev/ttyACM0')
         baud  = int(self.get_parameter('baud').value)
@@ -103,6 +117,7 @@ class SerialBridge(Node):
         self.create_subscription(Twist, self.cmd_topic, self.on_cmd_vel, 10)
         self.odom_pub = self.create_publisher(Odometry, self.odom_topic, 10)
         self.imu_pub  = self.create_publisher(Imu, self.imu_topic, 50)
+        self.battery_pub = self.create_publisher(BatteryState, self.battery_topic, 10)
         # NOTE: We intentionally do NOT publish TF here.
         # robot_localization will own odom->base_link.
 
@@ -137,7 +152,7 @@ class SerialBridge(Node):
         v = float(msg.linear.x)
         w = float(msg.angular.z)
 
-        min_inplace_w = 0.50
+        min_inplace_w = 0.7
         stationary_v_thresh = 0.05
 
         # If robot is basically not translating, enforce a minimum usable turn speed
@@ -196,6 +211,7 @@ class SerialBridge(Node):
                     if   typ == TYPE_ODOM and ln == LEN_ODOM: self._on_odom(payload)
                     elif typ == TYPE_IMU  and ln == LEN_IMU : self._on_imu(payload)
                     elif typ == TYPE_TLM:  self._on_telemetry(payload)  # placeholder
+                    elif typ == TYPE_BATTERY and ln == LEN_BATTERY: self._on_battery(payload)
                     else:
                         # unknown type or len mismatch; continue scanning
                         continue
@@ -297,6 +313,50 @@ class SerialBridge(Node):
             od.twist.covariance[i*6 + i] = float(val)
 
         self.odom_pub.publish(od)
+        
+    def _on_battery(self, p: bytes):
+        try:
+            (voltage,) = struct.unpack(FMT_BATTERY, p)
+        except struct.error:
+            return
+
+        msg = BatteryState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.frame_base  # or a dedicated 'battery_link' if you have one
+
+        msg.voltage = float(voltage)
+
+        # Unknowns per REP-140: report NaN rather than 0.0
+        nan = float('nan')
+        msg.temperature     = nan
+        msg.current         = nan
+        msg.charge          = nan
+        msg.capacity        = nan
+        msg.design_capacity = nan
+
+        # Optional linear percentage estimate if the user gave us min/max.
+        # Linear mapping is crude for LiPo/LiIon but fine as a dashboard readout.
+        if self.battery_v_max > self.battery_v_min:
+            pct = (voltage - self.battery_v_min) / (self.battery_v_max - self.battery_v_min)
+            msg.percentage = float(max(0.0, min(1.0, pct)))
+        else:
+            msg.percentage = nan
+
+        msg.power_supply_status     = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
+        msg.power_supply_health     = BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN
+        msg.power_supply_technology = BatteryState.POWER_SUPPLY_TECHNOLOGY_UNKNOWN
+        msg.present = True
+
+        # Per-cell info: only publish if we know the cell count.
+        if self.battery_cells > 0:
+            per_cell = voltage / self.battery_cells
+            msg.cell_voltage    = [per_cell] * self.battery_cells
+            msg.cell_temperature = [nan]      * self.battery_cells
+        else:
+            msg.cell_voltage     = []
+            msg.cell_temperature = []
+
+        self.battery_pub.publish(msg)
 
     def _on_imu(self, p: bytes):
         try:
