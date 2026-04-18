@@ -48,7 +48,7 @@ class STTConfig:
     silero_use_onnx:      bool = True
     silero_sensitivity:   float = 0.6
     silero_deactivity_detection: bool = True
-    max_recording_duration:   float = 8.0
+    max_recording_duration:   float = 16.0
     wakeword_backend:     str  = "openwakeword"
     wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx,assets/models/wakeword/alexa_v0.1.onnx,assets/models/wakeword/hey_jarvis_v0.1.onnx"
     # wakeword_model_path:  str  = "assets/models/wakeword/alexa_v0.1.onnx"
