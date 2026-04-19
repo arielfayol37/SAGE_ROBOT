@@ -24,8 +24,8 @@ class BatteryWatchdog(Node):
 
         # --- Parameters ---
         self.declare_parameter('battery_topic', '/battery_state')
-        self.declare_parameter('voltage_threshold', 15.0)     # trigger below this
-        self.declare_parameter('recovery_threshold', 15.5)    # clear alarm above this (hysteresis)
+        self.declare_parameter('voltage_threshold', 12.5)     # trigger below this
+        self.declare_parameter('recovery_threshold', 13.0)    # clear alarm above this (hysteresis)
         self.declare_parameter('email_endpoint', 'http://localhost:8004/api/kb/send-emails')
         self.declare_parameter('email_subject', 'ROBOT LOW BATTERY')
         self.declare_parameter('email_text',
