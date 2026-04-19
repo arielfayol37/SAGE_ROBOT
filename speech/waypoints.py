@@ -146,8 +146,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "TRANSPORTATION_LAB": {
         "frame_id": "map",
-        "x": 45.20415496826172, "y": 50.20747756958008,
-        "ox": 0.0, "oy": 0.0, "oz": 0.5885957291688836, "ow": 0.8084275277377374,
+        "x": 45.52143859863281, "y": 49.71985626220703,
+        "ox": 0.0, "oy": 0.0, "oz": 0.722147618688998, "ow": 0.6917389802677087,
         "description": (
             "Transportation Lab, a space for transportation engineering "
             "projects and research."
