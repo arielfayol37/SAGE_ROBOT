@@ -43,10 +43,6 @@ Ask SAGE verbally: **"Hey Jarvis, what is your IP address?"**
 
 SAGE will respond with its current IP(s). You can then open its interfaces from any browser on the same network.
 
-Alternatively, connect to the Jetson over SSH if you already know the IP:
-```bash
-ssh agi@<sage-ip>
-```
 
 ### How to Reconnect SAGE to WiFi (Headless Jetson)
 
@@ -59,29 +55,32 @@ nmcli device wifi connect "SSID_NAME" password "PASSWORD"
 ```
 
 **Option B — Physical monitor (if SSH is not possible):**
-> If you only need to reconnect WiFi and do not need the GUI, you can skip steps 5–7 and just use `nmcli` in the terminal after connecting the monitor.
 
 1. Power off SAGE.
 2. Remove the Jetson from the robot (requires opening the lid).
 3. Connect the Jetson to a monitor via HDMI, and connect a keyboard.
 4. Power it on. It will boot headless (terminal only).
-5. Re-enable the Gnome desktop temporarily:
+5. Use the nmcli commands listed in option A above.
+6. Reinstall the Jetson in the robot and restart SAGE normally.
+
+> If you need to enable the Gnome (default GUI for jetson) then do the following
+1. Re-enable the Gnome desktop temporarily:
    ```bash
    sudo systemctl set-default graphical.target
    sudo reboot
    ```
-6. After reboot, use the Gnome network manager GUI to reconnect to WiFi.
-7. Disable Gnome again to restore normal headless operation:
+2. After reboot, use the Gnome network manager GUI to reconnect to WiFi.
+3. Disable Gnome again to restore normal headless operation:
    ```bash
    sudo systemctl set-default multi-user.target
    sudo reboot
    ```
-8. Reinstall the Jetson in the robot and restart SAGE normally.
-
+> Remember to disable the Gnome desktop after you have activted it. It consumes a lot of memory.
 
 ### After Reconnecting
 
 Restart all SAGE services by powering down and restarting the robot at its docking station (there is a switch on the bottom left side).
+> Restart must be done at docking station with SAGE facing the wall/charger because that's how SAGE guesses her initial pose.
 
 ---
 
@@ -666,6 +665,11 @@ Accessible from any browser on the same network. Visitors can hold a button to s
 
 ## 11. Startup Procedures
 
+### Simple Startup
+> Sage by runs the ./start_robot.sh script on boot, so you shouldn't have to worry about starting sage besides flipping the switch.
+
+Make sure SAGE is at her docking station facing the wall/charger. Power down SAGE using the switch located at the bottom left of the robot. Then turn it ON. After a few minutes (~5), she should be ready to go.
+
 ### Prerequisites
 
 Before running any startup script, verify:
@@ -679,6 +683,10 @@ Before running any startup script, verify:
 8. API key files are in place (see Section 12)
 
 ### Full System Startup (Normal Operation)
+> You can always verify if sage-related processes have already been started by running `tmux ls`. If something is already running, you can kill it using `tmux kill-session -t sage`.
+
+
+After making sure there are sage-related processes running, you can manually start it using the bash script as follows:
 
 ```bash
 cd ~/Desktop/SAGE_ROBOT
