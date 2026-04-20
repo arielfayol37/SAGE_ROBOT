@@ -74,7 +74,7 @@ WAYPOINTS: Dict[str, Waypoint] = {
             "and research work."
         ),
     },
-    "ECE_LAB_1": {
+    "ELECTRICAL_AND_COMPUTER_LAB_1": {
         "frame_id": "map",
         "x": -7.211533069610596, "y": 47.88065719604492,
         "ox": 0.0, "oy": 0.0, "oz": -0.707168915604687, "ow": 0.7070446413080939,
@@ -83,7 +83,7 @@ WAYPOINTS: Dict[str, Waypoint] = {
             "and collaborate.  Many workbenches and tools are available."
         ),
     },
-    "ECE_LAB_2": {
+    "ELECTRICAL_AND_COMPUTER_LAB_2": {
         "frame_id": "map",
         "x": -7.666999340057373, "y": 35.37744140625,
         "ox": 0.0, "oy": 0.0, "oz": 0.731044131015225, "ow": 0.6823301829086813,
