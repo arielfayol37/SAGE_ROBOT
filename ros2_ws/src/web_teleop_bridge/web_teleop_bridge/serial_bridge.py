@@ -1,427 +1,412 @@
 #!/usr/bin/env python3
-# serial_bridge_without_imu.py
+# serial_bridge.py — simple, extensible STM32 <-> ROS 2 bridge
 #
-# Fault-tolerant ROS 2 <-> MCU serial bridge with auto-reconnect.
+# Host -> MCU  : TYPE=0x01  payload: <ff>           # v, w
+# MCU  -> Host : TYPE=0x02  payload: <fffff>        # x, y, theta, v, w   (ODOM ~50 Hz)
+#                TYPE=0x03  payload: <ffffff>       # gx, gy, gz, ax, ay, az (IMU 100–200 Hz)
+#                TYPE=0x10  payload: ...            # (optional) telemetry, define later
 #
-# Host -> MCU  : 0x78 + <ff>                       # v, w
-# MCU  -> Host : [0x7E][TYPE][LEN][<payload>]
-#   TYPE=0x02 -> odom     payload x, y, theta, v, w  (20 bytes, 5x float32)
-#   TYPE=0x04 -> battery  payload voltage            ( 4 bytes, 1x float32)
-#
-# Publishes:
-#   /odom                  nav_msgs/Odometry
-#   /battery_state         sensor_msgs/BatteryState
-#   odom -> base_link      TF
+# Frame for all directions: [SOF=0x7E][TYPE:1][LEN:1][PAYLOAD:LEN]
+# Little-endian floats. No checksum (USB CDC is reliable); easy to add later.
 
-import glob
-import math
 import struct
 import threading
 import time
-
+import math
 import serial
+import glob
 
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import Twist, TransformStamped
+from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import BatteryState
-from tf2_ros import TransformBroadcaster
+from sensor_msgs.msg import Imu, BatteryState
+from tf_transformations import quaternion_from_euler
 
-# --- Protocol constants -------------------------------------------------------
 SOF          = 0x7E
+TYPE_CMD     = 0x01
 TYPE_ODOM    = 0x02
+TYPE_IMU     = 0x03
+TYPE_TLM     = 0x10  # reserved example for future telemetry
 TYPE_BATTERY = 0x04
 
-# Pre-compiled struct objects (faster than passing a format string every call)
-_S_ODOM    = struct.Struct('<fffff')    # x, y, th, v, w
-_S_BATTERY = struct.Struct('<f')        # voltage
-_S_TX      = struct.Struct('<Bff')      # 0x78, v, w
+FMT_BATTERY  = '<f'          # voltage
+LEN_BATTERY  = struct.calcsize(FMT_BATTERY)
+FMT_CMD      = '<ff'         # v, w
+FMT_ODOM     = '<fffff'      # x, y, th, v, w
+FMT_IMU      = '<ffffff'     # gx, gy, gz, ax, ay, az
+LEN_CMD      = struct.calcsize(FMT_CMD)
+LEN_ODOM     = struct.calcsize(FMT_ODOM)
+LEN_IMU      = struct.calcsize(FMT_IMU)
 
-LEN_ODOM    = _S_ODOM.size              # 20
-LEN_BATTERY = _S_BATTERY.size           # 4
-LEN_TX      = _S_TX.size                # 9
+G_STANDARD   = 9.80665  # m/s^2
 
-# --- Reconnect policy ---------------------------------------------------------
-_RECONNECT_MIN_S = 0.25
-_RECONNECT_MAX_S = 5.0
-_RECONNECT_WARN_PERIOD_S = 5.0
-
-_NAN = float('nan')
-
-
-class SerialBridgeNoImu(Node):
+class SerialBridge(Node):
     def __init__(self):
-        super().__init__('serial_bridge_no_imu')
+        super().__init__('serial_bridge')
 
-        # ---- Parameters ------------------------------------------------------
+        # --- Params (minimal; keep it simple) ---
         self.declare_parameter('port', '/dev/ttyACM0')
         self.declare_parameter('baud', 115200)
         self.declare_parameter('cmd_topic', '/cmd_vel')
         self.declare_parameter('odom_topic', '/odom')
+        self.declare_parameter('imu_topic', '/imu/data')
         self.declare_parameter('frame_odom', 'odom')
         self.declare_parameter('frame_base', 'base_link')
-        self.declare_parameter('serial_timeout_s', 0.05)
-        self.declare_parameter('rx_chunk', 256)
+        self.declare_parameter('frame_imu',  'imu_link')
+        self.declare_parameter('serial_timeout_s', 0.01)  # short blocking read
+        self.declare_parameter('rx_chunk', 128)
+
+        # IMU calibration options
+        self.declare_parameter('calib_enable', True)
+        self.declare_parameter('calib_duration_s', 5.)
+        self.declare_parameter('stationary_gyro_thresh', 0.08)   # rad/s (vector magnitude)
+        self.declare_parameter('stationary_accel_g_tol', 2.0)    # m/s^2, | |a| - g | <= tol
+        self.declare_parameter('imu_z_positive_down', True)      # az ≈ +g at rest (your convention)
+        self.declare_parameter('cov_floor_gyro', 1e-6)
+        self.declare_parameter('cov_floor_accel', 1e-5)
         self.declare_parameter('battery_topic', '/battery_state')
-        # Percentage estimate is skipped when min >= max.
+        # Optional: lets you show a % on the BatteryState message.
+        # Leave min >= max to skip percentage estimation.
         self.declare_parameter('battery_v_min', 0.0)
         self.declare_parameter('battery_v_max', 0.0)
         self.declare_parameter('battery_cell_count', 0)   # 0 = unknown
-        self.declare_parameter('auto_detect_port', True)  # rescan /dev/ttyACM* on (re)connect
 
-        self._configured_port  = str(self.get_parameter('port').value)
-        self._baud             = int(self.get_parameter('baud').value)
-        self._cmd_topic        = str(self.get_parameter('cmd_topic').value)
-        self._odom_topic       = str(self.get_parameter('odom_topic').value)
-        self._battery_topic    = str(self.get_parameter('battery_topic').value)
-        self._frame_odom       = str(self.get_parameter('frame_odom').value)
-        self._frame_base       = str(self.get_parameter('frame_base').value)
-        self._serial_timeout_s = float(self.get_parameter('serial_timeout_s').value)
-        self._rx_chunk         = int(self.get_parameter('rx_chunk').value)
-        self._battery_v_min    = float(self.get_parameter('battery_v_min').value)
-        self._battery_v_max    = float(self.get_parameter('battery_v_max').value)
-        self._battery_cells    = int(self.get_parameter('battery_cell_count').value)
-        self._auto_detect      = bool(self.get_parameter('auto_detect_port').value)
+        self.battery_topic = self.get_parameter('battery_topic').value
+        self.battery_v_min = float(self.get_parameter('battery_v_min').value)
+        self.battery_v_max = float(self.get_parameter('battery_v_max').value)
+        self.battery_cells = int(self.get_parameter('battery_cell_count').value)
 
-        # ---- Serial state ----------------------------------------------------
-        self._serial_lock = threading.Lock()
-        self.ser = None
-        self._current_port = None
+        port = next(iter(glob.glob('/dev/ttyACM*')), '/dev/ttyACM0')
+        baud  = int(self.get_parameter('baud').value)
+        self.cmd_topic  = self.get_parameter('cmd_topic').value
+        self.odom_topic = self.get_parameter('odom_topic').value
+        self.imu_topic  = self.get_parameter('imu_topic').value
+        self.frame_odom = self.get_parameter('frame_odom').value
+        self.frame_base = self.get_parameter('frame_base').value
+        self.frame_imu  = self.get_parameter('frame_imu').value
+        self.serial_timeout_s = float(self.get_parameter('serial_timeout_s').value)
+        self.rx_chunk   = int(self.get_parameter('rx_chunk').value)
 
-        # Covariance templates are built once and re-assigned per message.
-        self._pose_cov_template  = self._build_cov([1e-3, 1e-3, 1e3, 1e3, 1e3, 5e-3])
-        self._twist_cov_template = self._build_cov([5e-3, 1e3, 1e3, 1e3, 1e3, 5e-3])
+        # Calibration params
+        self.calib_enable = bool(self.get_parameter('calib_enable').value)
+        self.calib_duration_s = float(self.get_parameter('calib_duration_s').value)
+        self.stationary_gyro_thresh = float(self.get_parameter('stationary_gyro_thresh').value)
+        self.stationary_accel_g_tol = float(self.get_parameter('stationary_accel_g_tol').value)
+        self.imu_z_positive_down = bool(self.get_parameter('imu_z_positive_down').value)
+        self.cov_floor_gyro = float(self.get_parameter('cov_floor_gyro').value)
+        self.cov_floor_accel = float(self.get_parameter('cov_floor_accel').value)
+        self._g_sign = +1.0 if self.imu_z_positive_down else -1.0
 
-        # ---- ROS I/O ---------------------------------------------------------
-        self.create_subscription(Twist, self._cmd_topic, self.on_cmd_vel, 10)
-        self.odom_pub       = self.create_publisher(Odometry,    self._odom_topic,    10)
-        self.battery_pub    = self.create_publisher(BatteryState, self._battery_topic, 10)
-        self.tf_broadcaster = TransformBroadcaster(self)
+        # --- Serial ---
+        try:
+            self.ser = serial.Serial(
+                port=port,
+                baudrate=baud,
+                timeout=self.serial_timeout_s,
+                write_timeout=0.2
+            )
+            time.sleep(1.5)  # let CDC enumerate/reset
+            self.get_logger().info(f"Opened {port}@{baud}")
+        except Exception as e:
+            self.get_logger().error(f"Failed to open {port}@{baud}: {e}")
+            raise
 
-        # ---- RX / reconnect worker ------------------------------------------
+        # --- ROS I/O ---
+        self.create_subscription(Twist, self.cmd_topic, self.on_cmd_vel, 10)
+        self.odom_pub = self.create_publisher(Odometry, self.odom_topic, 10)
+        self.imu_pub  = self.create_publisher(Imu, self.imu_topic, 50)
+        self.battery_pub = self.create_publisher(BatteryState, self.battery_topic, 10)
+        # NOTE: We intentionally do NOT publish TF here.
+        # robot_localization will own odom->base_link.
+
+        # --- RX worker state ---
         self._shutdown = threading.Event()
         self._buf = bytearray()
-        self._rx_thread = threading.Thread(
-            target=self._rx_loop,
-            name='serial_rx',
-            daemon=True,
-        )
+        self._rx_thread = threading.Thread(target=self._rx_loop, name='serial_rx', daemon=True)
         self._rx_thread.start()
 
+        # --- IMU calibration state ---
+        self._calib_done = (not self.calib_enable)
+        self._calib_start = time.monotonic()
+        self._calib_window_s = self.calib_duration_s
+        self._N = 0
+        self._sum_g = [0.0, 0.0, 0.0]
+        self._sum2_g = [0.0, 0.0, 0.0]
+        self._sum_a = [0.0, 0.0, 0.0]
+        self._sum2_a = [0.0, 0.0, 0.0]
+        self._bias_g = [0.0, 0.0, 0.0]
+        self._bias_a = [0.0, 0.0, 0.0]
+        self._cov_g  = [1e-3, 1e-3, 1e-3]   # defaults used until calibrated
+        self._cov_a  = [1e-2, 1e-2, 2e-2]
+
         self.get_logger().info(
-            f"TX:{self._cmd_topic} | RX->ODOM:{self._odom_topic} | "
-            f"Frames: odom='{self._frame_odom}' base='{self._frame_base}'"
+            f"TX:{self.cmd_topic} | RX-> ODOM:{self.odom_topic}, IMU:{self.imu_topic} "
+            f"| Frames: odom='{self.frame_odom}' base='{self.frame_base}' imu='{self.frame_imu}' | "
+            f"IMU calib: enable={self.calib_enable}, window={self._calib_window_s:.1f}s, z_pos_down={self.imu_z_positive_down}"
         )
 
-    # --------------------------------------------------------------------------
-    # Serial connection management
-    # --------------------------------------------------------------------------
-
-    @staticmethod
-    def _build_cov(diag):
-        """Row-major 36-element covariance list with the given 6-element diagonal."""
-        cov = [0.0] * 36
-        for i, v in enumerate(diag):
-            cov[i * 7] = float(v)   # i * 6 + i == i * 7
-        return cov
-
-    def _candidate_ports(self):
-        """Ports to try, in priority order. Detected ACM ports first, then configured."""
-        seen = []
-        if self._auto_detect:
-            for p in sorted(glob.glob('/dev/ttyACM*')):
-                if p not in seen:
-                    seen.append(p)
-        if self._configured_port and self._configured_port not in seen:
-            seen.append(self._configured_port)
-        return seen
-
-    def _close_serial_unlocked(self):
-        """Close current serial handle. Caller must hold _serial_lock."""
-        if self.ser is not None:
-            try:
-                self.ser.close()
-            except Exception:
-                pass
-        self.ser = None
-        self._current_port = None
-
-    def _open_serial(self):
-        """Try every candidate port. Returns True on success. Never raises."""
-        with self._serial_lock:
-            self._close_serial_unlocked()
-
-            for port in self._candidate_ports():
-                ser = self._try_open(port)
-                if ser is None:
-                    continue
-
-                # Let USB CDC settle and discard any stale bytes.
-                time.sleep(0.3)
-                try:
-                    ser.reset_input_buffer()
-                    ser.reset_output_buffer()
-                except Exception:
-                    pass
-
-                self.ser = ser
-                self._current_port = port
-                self.get_logger().info(f"Serial connected: {port}@{self._baud}")
-                return True
-
-        return False
-
-    def _try_open(self, port):
-        """Open one port. Returns the Serial handle or None."""
-        kwargs = dict(
-            port=port,
-            baudrate=self._baud,
-            timeout=self._serial_timeout_s,
-            write_timeout=0.2,
-        )
-        try:
-            # 'exclusive' needs pyserial >= 3.3.
-            return serial.Serial(exclusive=True, **kwargs)
-        except TypeError:
-            try:
-                return serial.Serial(**kwargs)
-            except Exception as e:
-                self.get_logger().debug(f"Open {port} failed: {e}")
-                return None
-        except Exception as e:
-            self.get_logger().debug(f"Open {port} failed: {e}")
-            return None
-
-    def _mark_connection_lost(self):
-        """Mark the port as dead. RX loop will reconnect."""
-        with self._serial_lock:
-            had_port = self.ser is not None
-            prev_port = self._current_port
-            self._close_serial_unlocked()
-        if had_port:
-            self.get_logger().warn(f"Serial connection lost on {prev_port}")
-
-    # --------------------------------------------------------------------------
-    # TX (cmd_vel)
-    # --------------------------------------------------------------------------
-
+    # ========== TX: /cmd_vel -> serial (send immediately, no forced rate) ==========
     def on_cmd_vel(self, msg: Twist):
         v = float(msg.linear.x)
         w = float(msg.angular.z)
 
-        # Enforce a minimum usable turn speed when essentially stationary.
         min_inplace_w = 0.7
         stationary_v_thresh = 0.05
+
+        # If robot is basically not translating, enforce a minimum usable turn speed
         if abs(v) < stationary_v_thresh and 0.0 < abs(w) < min_inplace_w:
             w = min_inplace_w if w > 0.0 else -min_inplace_w
+        
+        # keep your existing binary TX format: 0x78 'x' + v + w (float32 little-endian)
+        pkt = struct.pack('<Bff', 0x78, v, w)
+        try:
+            n = self.ser.write(pkt)
+            if n != 9:
+                self.get_logger().warn(f"short write {n}/9")
+        except Exception as e:
+            self.get_logger().error(f"serial write failed: {e}")
 
-        pkt = _S_TX.pack(0x78, v, w)
-
-        with self._serial_lock:
-            ser = self.ser
-            if ser is None:
-                return  # Not connected; RX thread owns reconnection.
-            try:
-                n = ser.write(pkt)
-                if n != LEN_TX:
-                    self.get_logger().warn(f"Short serial write {n}/{LEN_TX}")
-                    return
-            except (serial.SerialException, OSError, serial.SerialTimeoutException) as e:
-                self.get_logger().error(f"Serial write failed: {e}")
-                self._close_serial_unlocked()   # already holding the lock
-            except Exception as e:
-                self.get_logger().error(f"Unexpected serial write error: {e}")
-                self._close_serial_unlocked()
-
-    # --------------------------------------------------------------------------
-    # RX + reconnect loop
-    # --------------------------------------------------------------------------
-
+    # ========== RX thread: read, frame, dispatch ==========
     def _rx_loop(self):
-        buf = self._buf
-        backoff = _RECONNECT_MIN_S
-        last_warn_t = 0.0
-
-        # Hot-path local bindings
-        sof          = SOF
-        type_odom    = TYPE_ODOM
-        type_battery = TYPE_BATTERY
-        len_odom     = LEN_ODOM
-        len_battery  = LEN_BATTERY
-        buf_index    = buf.index
-        odom_unpack  = _S_ODOM.unpack_from
-        bat_unpack   = _S_BATTERY.unpack_from
-
+        read = self.ser.read
+        buf  = self._buf
         while not self._shutdown.is_set():
-            ser = self.ser
-            if ser is None:
-                # Reconnect path
-                if self._open_serial():
-                    buf.clear()
-                    backoff = _RECONNECT_MIN_S
-                    last_warn_t = 0.0
-                    continue
-
-                now = time.monotonic()
-                if now - last_warn_t > _RECONNECT_WARN_PERIOD_S:
-                    self.get_logger().warn(
-                        f"No serial port available; retrying (backoff={backoff:.2f}s)"
-                    )
-                    last_warn_t = now
-                if self._shutdown.wait(backoff):
-                    break
-                backoff = min(backoff * 2.0, _RECONNECT_MAX_S)
-                continue
-
-            # Read
             try:
-                chunk = ser.read(self._rx_chunk)
-            except (serial.SerialException, OSError) as e:
-                self.get_logger().warn(f"Serial read error (disconnected?): {e}")
-                self._mark_connection_lost()
-                continue
+                chunk = read(self.rx_chunk)
+                if chunk:
+                    buf.extend(chunk)
+
+                # parse as many frames as available
+                while True:
+                    # find SOF
+                    try:
+                        i = buf.index(SOF)
+                    except ValueError:
+                        buf.clear()
+                        break
+
+                    # need header
+                    if len(buf) - i < 3:
+                        if i > 0:
+                            del buf[:i]
+                        break
+
+                    typ = buf[i+1]
+                    ln  = buf[i+2]
+                    frame_len = 3 + ln
+
+                    # wait for full frame
+                    if len(buf) - i < frame_len:
+                        if i > 0:
+                            del buf[:i]
+                        break
+
+                    payload = buf[i+3 : i+3+ln]
+                    # consume frame
+                    del buf[:i+frame_len]
+
+                    # dispatch by TYPE
+                    if   typ == TYPE_ODOM and ln == LEN_ODOM: self._on_odom(payload)
+                    elif typ == TYPE_IMU  and ln == LEN_IMU : self._on_imu(payload)
+                    elif typ == TYPE_TLM:  self._on_telemetry(payload)  # placeholder
+                    elif typ == TYPE_BATTERY and ln == LEN_BATTERY: self._on_battery(payload)
+                    else:
+                        # unknown type or len mismatch; continue scanning
+                        continue
+
             except Exception as e:
-                self.get_logger().warn(f"Unexpected serial read error: {e}")
-                time.sleep(0.05)
-                continue
+                self.get_logger().warn(f"serial RX error: {e}")
+                time.sleep(0.01)
 
-            if chunk:
-                buf.extend(chunk)
+    # ========== Helpers for calibration ==========
+    def _maybe_accumulate_calib(self, gx, gy, gz, ax, ay, az):
+        """Accumulate samples only when 'stationary' to avoid mis-calibration."""
+        if self._calib_done:
+            return
 
-            # Parse frames from the buffer
-            while True:
-                try:
-                    i = buf_index(sof)
-                except ValueError:
-                    # No SOF anywhere; drop everything
-                    buf.clear()
-                    break
+        # Simple stationary detector
+        gyro_mag = math.sqrt(gx*gx + gy*gy + gz*gz)
+        accel_mag = math.sqrt(ax*ax + ay*ay + az*az)
+        # accel magnitude check uses absolute magnitude (always ~9.81), independent of sign convention
+        if (gyro_mag <= self.stationary_gyro_thresh) and (abs(accel_mag - G_STANDARD) <= self.stationary_accel_g_tol):
+            self._N += 1
+            self._sum_g[0]  += gx; self._sum_g[1]  += gy; self._sum_g[2]  += gz
+            self._sum2_g[0] += gx*gx; self._sum2_g[1] += gy*gy; self._sum2_g[2] += gz*gz
+            self._sum_a[0]  += ax; self._sum_a[1]  += ay; self._sum_a[2]  += az
+            self._sum2_a[0] += ax*ax; self._sum2_a[1] += ay*ay; self._sum2_a[2] += az*az
 
-                # Need SOF + TYPE + LEN
-                if len(buf) - i < 3:
-                    if i > 0:
-                        del buf[:i]
-                    break
+        # Finalize after time window
+        if (time.monotonic() - self._calib_start) >= self._calib_window_s:
+            if self._N == 0:
+                # No valid stationary samples → extend calibration window
+                self._calib_start = time.monotonic()
+                self.get_logger().warn(
+                    "IMU calibration: no stationary samples yet; extending window..."
+                )
+                return
 
-                typ = buf[i + 1]
-                ln  = buf[i + 2]
-                frame_len = 3 + ln
+            N = self._N  # we have samples; use the real N
+            mean_g = [self._sum_g[i]/N for i in range(3)]
+            mean_a = [self._sum_a[i]/N for i in range(3)]
+            var_g  = [max(self.cov_floor_gyro,  self._sum2_g[i]/N - mean_g[i]**2) for i in range(3)]
+            var_a  = [max(self.cov_floor_accel, self._sum2_a[i]/N - mean_a[i]**2) for i in range(3)]
 
-                # Wait for full frame
-                if len(buf) - i < frame_len:
-                    if i > 0:
-                        del buf[:i]
-                    break
+            # Gyro bias = mean
+            self._bias_g = mean_g
 
-                # Dispatch without copying the payload
-                payload_off = i + 3
-                if typ == type_odom and ln == len_odom:
-                    try:
-                        x, y, th, v, w = odom_unpack(buf, payload_off)
-                    except struct.error:
-                        pass
-                    else:
-                        self._publish_odom(x, y, th, v, w)
-                elif typ == type_battery and ln == len_battery:
-                    try:
-                        (voltage,) = bat_unpack(buf, payload_off)
-                    except struct.error:
-                        pass
-                    else:
-                        self._publish_battery(voltage)
-                # else: unknown / malformed frame — silently skipped
+            # Accel bias: KEEP gravity in Z (your Z is positive-down)
+            g_keep = +G_STANDARD if self._g_sign > 0 else -G_STANDARD
+            self._bias_a = [mean_a[0], mean_a[1], mean_a[2] - g_keep]
 
-                del buf[:i + frame_len]
+            self._cov_g = var_g
+            self._cov_a = var_a
 
-    # --------------------------------------------------------------------------
-    # Message publishers
-    # --------------------------------------------------------------------------
+            self._calib_done = True
+            self.get_logger().info(
+                f"IMU calibration complete (N={N}). "
+                f"bias_g={['%.4f'%b for b in self._bias_g]}, "
+                f"bias_a={['%.4f'%b for b in self._bias_a]}, "
+                f"cov_g={['%.2e'%c for c in self._cov_g]}, "
+                f"cov_a={['%.2e'%c for c in self._cov_a]}"
+            )
 
-    def _publish_odom(self, x, y, th, v, w):
-        # Yaw-only quaternion: qx = qy = 0, qz = sin(th/2), qw = cos(th/2)
-        half = th * 0.5
-        qz = math.sin(half)
-        qw = math.cos(half)
+    # ========== Handlers ==========
+    def _on_odom(self, p: bytes):
+        try:
+            x, y, th, v, w = struct.unpack(FMT_ODOM, p)
+        except struct.error:
+            return
 
         now = self.get_clock().now().to_msg()
+        qx, qy, qz, qw = quaternion_from_euler(0.0, 0.0, float(th))
 
         od = Odometry()
-        od.header.stamp    = now
-        od.header.frame_id = self._frame_odom
-        od.child_frame_id  = self._frame_base
+        od.header.stamp = now
+        od.header.frame_id = self.frame_odom
+        od.child_frame_id  = self.frame_base
 
-        p = od.pose.pose
-        p.position.x = x
-        p.position.y = y
-        # position.z defaults to 0.0
-        p.orientation.z = qz
-        p.orientation.w = qw
-        # orientation.x / .y default to 0.0
+        od.pose.pose.position.x = float(x)
+        od.pose.pose.position.y = float(y)
+        od.pose.pose.position.z = 0.0
+        od.pose.pose.orientation.x = qx
+        od.pose.pose.orientation.y = qy
+        od.pose.pose.orientation.z = qz
+        od.pose.pose.orientation.w = qw
 
-        t = od.twist.twist
-        t.linear.x  = v
-        t.angular.z = w
+        od.twist.twist.linear.x  = float(v)
+        od.twist.twist.linear.y  = 0.0
+        od.twist.twist.linear.z  = 0.0
+        od.twist.twist.angular.x = 0.0
+        od.twist.twist.angular.y = 0.0
+        od.twist.twist.angular.z = float(w)
 
-        od.pose.covariance  = self._pose_cov_template
-        od.twist.covariance = self._twist_cov_template
+        # Diagonal covariances (non-zero for used DoFs; large for unused)
+        # pose:  x,     y,     z,    roll,  pitch, yaw
+        pose_diag  = [1e-3, 1e-3, 1e3,  1e3,  1e3,  5e-3]
+        # twist: vx,    vy,    vz,   vroll, vpitch,vyaw
+        twist_diag = [5e-3, 1e3,  1e3,  1e3,  1e3,  5e-3]
+        for i, val in enumerate(pose_diag):
+            od.pose.covariance[i*6 + i] = float(val)
+        for i, val in enumerate(twist_diag):
+            od.twist.covariance[i*6 + i] = float(val)
 
         self.odom_pub.publish(od)
+        
+    def _on_battery(self, p: bytes):
+        try:
+            (voltage,) = struct.unpack(FMT_BATTERY, p)
+        except struct.error:
+            return
 
-        tf = TransformStamped()
-        tf.header.stamp    = now
-        tf.header.frame_id = self._frame_odom
-        tf.child_frame_id  = self._frame_base
-        tf.transform.translation.x = x
-        tf.transform.translation.y = y
-        tf.transform.rotation.z = qz
-        tf.transform.rotation.w = qw
-        self.tf_broadcaster.sendTransform(tf)
-
-    def _publish_battery(self, voltage):
         msg = BatteryState()
-        msg.header.stamp    = self.get_clock().now().to_msg()
-        msg.header.frame_id = self._frame_base
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.frame_base  # or a dedicated 'battery_link' if you have one
+
         msg.voltage = float(voltage)
 
-        # Unknowns per REP-140: NaN, not 0.0
-        msg.temperature     = _NAN
-        msg.current         = _NAN
-        msg.charge          = _NAN
-        msg.capacity        = _NAN
-        msg.design_capacity = _NAN
+        # Unknowns per REP-140: report NaN rather than 0.0
+        nan = float('nan')
+        msg.temperature     = nan
+        msg.current         = nan
+        msg.charge          = nan
+        msg.capacity        = nan
+        msg.design_capacity = nan
 
-        if self._battery_v_max > self._battery_v_min:
-            span = self._battery_v_max - self._battery_v_min
-            pct = (voltage - self._battery_v_min) / span
-            if pct < 0.0:
-                pct = 0.0
-            elif pct > 1.0:
-                pct = 1.0
-            msg.percentage = float(pct)
+        # Optional linear percentage estimate if the user gave us min/max.
+        # Linear mapping is crude for LiPo/LiIon but fine as a dashboard readout.
+        if self.battery_v_max > self.battery_v_min:
+            pct = (voltage - self.battery_v_min) / (self.battery_v_max - self.battery_v_min)
+            msg.percentage = float(max(0.0, min(1.0, pct)))
         else:
-            msg.percentage = _NAN
+            msg.percentage = nan
 
         msg.power_supply_status     = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
         msg.power_supply_health     = BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN
         msg.power_supply_technology = BatteryState.POWER_SUPPLY_TECHNOLOGY_UNKNOWN
         msg.present = True
 
-        if self._battery_cells > 0:
-            per_cell = voltage / self._battery_cells
-            msg.cell_voltage     = [per_cell] * self._battery_cells
-            msg.cell_temperature = [_NAN]     * self._battery_cells
+        # Per-cell info: only publish if we know the cell count.
+        if self.battery_cells > 0:
+            per_cell = voltage / self.battery_cells
+            msg.cell_voltage    = [per_cell] * self.battery_cells
+            msg.cell_temperature = [nan]      * self.battery_cells
         else:
             msg.cell_voltage     = []
             msg.cell_temperature = []
 
         self.battery_pub.publish(msg)
 
-    # --------------------------------------------------------------------------
-    # Shutdown
-    # --------------------------------------------------------------------------
+    def _on_imu(self, p: bytes):
+        try:
+            gx, gy, gz, ax, ay, az = struct.unpack(FMT_IMU, p)
+        except struct.error:
+            return
 
+        # Accumulate for startup calibration (biased/raw values)
+        if not self._calib_done:
+            self._maybe_accumulate_calib(gx, gy, gz, ax, ay, az)
+
+        # Apply biases if ready
+        if self._calib_done:
+            gx -= self._bias_g[0]; gy -= self._bias_g[1]; gz -= self._bias_g[2]
+            ax -= self._bias_a[0]; ay -= self._bias_a[1]; az -= self._bias_a[2]
+
+        now = self.get_clock().now().to_msg()
+        m = Imu()
+        m.header.stamp = now
+        m.header.frame_id = self.frame_imu
+
+        # No orientation provided
+        m.orientation_covariance[0] = -1.0
+        m.orientation_covariance[4] = -1.0
+        m.orientation_covariance[8] = -1.0
+
+        # Angular velocity (rad/s)
+        m.angular_velocity.x = float(gx)
+        m.angular_velocity.y = float(gy)
+        m.angular_velocity.z = float(gz)
+        # Use measured variances (diagonal only)
+        m.angular_velocity_covariance[0] = float(self._cov_g[0])
+        m.angular_velocity_covariance[4] = float(self._cov_g[1])
+        m.angular_velocity_covariance[8] = float(self._cov_g[2])
+
+        # Linear acceleration (m/s^2) — gravity retained in Z
+        m.linear_acceleration.x = float(ax)
+        m.linear_acceleration.y = float(ay)
+        m.linear_acceleration.z = float(az)
+        m.linear_acceleration_covariance[0] = float(self._cov_a[0])
+        m.linear_acceleration_covariance[4] = float(self._cov_a[1])
+        m.linear_acceleration_covariance[8] = float(self._cov_a[2])
+
+        self.imu_pub.publish(m)
+
+    def _on_telemetry(self, p: bytes):
+        # Placeholder: define your telemetry format later.
+        pass
+
+    # ========== Cleanup ==========
     def destroy_node(self):
         self._shutdown.set()
         try:
@@ -429,16 +414,18 @@ class SerialBridgeNoImu(Node):
                 self._rx_thread.join(timeout=1.0)
         except Exception:
             pass
-        with self._serial_lock:
-            self._close_serial_unlocked()
+        try:
+            self.ser.close()
+        except Exception:
+            pass
         super().destroy_node()
 
 
 def main():
     rclpy.init()
-    node = SerialBridgeNoImu()
+    node = SerialBridge()
     try:
-        rclpy.spin(node)
+        rclpy.spin(node)  # simple executor; our RX thread does the I/O work
     except KeyboardInterrupt:
         pass
     finally:
