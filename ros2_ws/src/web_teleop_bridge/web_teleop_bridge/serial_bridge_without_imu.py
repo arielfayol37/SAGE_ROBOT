@@ -261,6 +261,13 @@ class SerialBridge(Node):
         if not (math.isfinite(v) and math.isfinite(w)):
             self.get_logger().warn("Non-finite cmd_vel; ignoring.")
             return
+        
+        min_inplace_w = 0.7
+        stationary_v_thresh = 0.05
+
+        # If robot is basically not translating, enforce a minimum usable turn speed
+        if abs(v) < stationary_v_thresh and 0.0 < abs(w) < min_inplace_w:
+            w = min_inplace_w if w > 0.0 else -min_inplace_w
 
         frame = build_frame(TYPE_CMD, struct.pack(FMT_CMD, v, w))
 
