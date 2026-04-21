@@ -64,8 +64,8 @@ typedef struct {
 #define DW_ENCODER_CPR        600       // counts per motor shaft rev (A or B channel edges before x4) DEADWHEEL
 #define ENCODER_COUNTS_PER_DW_REV  ((DW_ENCODER_CPR)*(ENC_XMULT))
 
-#define DW_TIM_H                 (&htim1)          // assumed: TIM1 = Horizontal dead wheel
-#define DW_TIM_S                 (&htim2)          // assumed: TIM2 = straight dead wheel
+#define DW_TIM_S                 (&htim1)          // assumed: TIM1 = Horizontal dead wheel
+#define DW_TIM_H                 (&htim2)          // assumed: TIM2 = straight dead wheel
 #define MOTOR_TIM_R              (&htim3)          // assumed: TIM3 = Right motor encoder
 #define MOTOR_TIM_L              (&htim4)          // assumed: TIM4 = Left motor encoder
 
@@ -117,6 +117,7 @@ typedef struct {
 #define TYPE_CMD       0x01  // Host -> MCU: v,w
 #define TYPE_ODOM      0x02  // MCU -> Host: x,y,th,v,w
 #define TYPE_IMU       0x03  // MCU -> Host: gx,gy,gz, ax,ay,az
+#define TYPE_BATTERY   0x04  // MCU -> Host: Voltage
 
 // Payload sizes (bytes)
 #define LEN_CMD        (sizeof(float)*2)   // 8
@@ -135,6 +136,8 @@ typedef struct {
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 I2C_HandleTypeDef hi2c3;
 
 TIM_HandleTypeDef htim1;
@@ -198,7 +201,6 @@ float w = 0.0f; // angular velocity rad/s
 
 uint8_t IM_buf[14]; // IMU data buffer
 
-
 typedef struct { // IMU data structure
 	float ax, ay, az;    // m/s^2
 	float gx, gy, gz;    // rad/s
@@ -218,6 +220,7 @@ static void MX_TIM4_Init(void);
 static void MX_I2C3_Init(void);
 static void MX_TIM14_Init(void);
 static void MX_TIM15_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 void Motor_SetSpeed_L(float v);
 void Motor_SetSpeed_R(float v);
@@ -340,24 +343,42 @@ static void bno_send_set_feature(uint8_t report_id, uint32_t interval_us) {
 
 static void IMU_Init(void)
 {
-    if (HAL_I2C_IsDeviceReady(&hi2c3, BNO_ADDR, 3, 100) == HAL_OK) {
-        const char *msg = "BNO08x Found!\r\n";
-        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-    } else {
+    // 1. Give the BNO08x time to boot its internal firmware upon cold power-up
+    HAL_Delay(400);
+
+    // 2. Try pinging the IMU a few times instead of just giving up on the first try
+    uint8_t retries = 15;
+    while (retries > 0) {
+        if (HAL_I2C_IsDeviceReady(&hi2c3, BNO_ADDR, 3, 100) == HAL_OK) {
+            break; // Found it!
+        }
+        HAL_Delay(150); // Wait a bit and try again
+        retries--;
+    }
+
+    if (retries == 0) {
         const char *err = "IMU not found!\r\n";
         HAL_UART_Transmit(&huart2, (uint8_t*)err, strlen(err), 100);
-        return;
+        return; // Still didn't find it, abort init
     }
 
-    HAL_Delay(300);
+    const char *msg = "BNO08x Found!\r\n";
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 
-    // Drain startup packets to prevent framing errors
-    for (int i = 0; i < 20; i++) {
-        uint8_t tmp[128];
-        HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, tmp, 128, 100);
-        HAL_Delay(10);
-    }
     HAL_Delay(100);
+
+    // 3. Drain startup packets
+    // NOTE: The BNO08x uses SHTP protocol. Blindly reading 128 bytes
+    // can sometimes misalign the I2C state machine. It is safer to read
+    // the 4-byte header first, then the payload, but for a quick drain:
+    for (int i = 0; i < 20; i++) {
+        uint8_t tmp[4];
+        // Just read the header to clear the interrupt/pending data
+        HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, tmp, 4, 10);
+        HAL_Delay(5);
+    }
+
+    HAL_Delay(50);
 
     // Request Accel and Gyro at 10,000 us (100Hz) to match your main loop
     bno_send_set_feature(REPORTID_ACCELEROMETER, 10000);
@@ -368,21 +389,18 @@ static void IMU_Init(void)
 
 IMU_Data_t Read_IMU(void)
 {
-    uint8_t hdr[4];
-
-    // 1. Read header to get length
-    if (HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, hdr, 4, 10) != HAL_OK) {
+    // 1. Read a fixed chunk large enough for our expected reports (64 bytes).
+    // Doing this in ONE transaction prevents the I2C STOP condition from
+    // flushing the IMU's data buffer.
+    if (HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, pkt_buf, 64, 15) != HAL_OK) {
         return current_imu_data; // return last known data if busy/failed
     }
 
-    uint16_t pkt_len = ((uint16_t)(hdr[1] & 0x7F) << 8) | hdr[0];
-    if (pkt_len <= 4 || pkt_len == 0xFFFF) {
-        return current_imu_data; // empty or invalid length
-    }
+    // 2. Parse the length from the first two bytes of our chunk
+    uint16_t pkt_len = ((uint16_t)(pkt_buf[1] & 0x7F) << 8) | pkt_buf[0];
 
-    // 2. Read full packet
-    if (pkt_len > sizeof(pkt_buf)) pkt_len = sizeof(pkt_buf);
-    if (HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, pkt_buf, pkt_len, 20) != HAL_OK) {
+    // 3. If length is empty (<=4), invalid (0xFFFF), or larger than what we read, ignore it
+    if (pkt_len <= 4 || pkt_len > 64) {
         return current_imu_data;
     }
 
@@ -390,19 +408,19 @@ IMU_Data_t Read_IMU(void)
     uint16_t cargo_len = pkt_len - 4;
     uint8_t *cargo = &pkt_buf[4];
 
-    // We only care about Input Reports
+    // We only care about Input Reports (Channel 3)
     if (channel != BNO_CH_INPUT_REPORTS || cargo_len < 5) {
         return current_imu_data;
     }
 
     uint16_t offset = 0;
 
-    // Skip timebase reference if present
+    // Skip timebase reference if present (0xFB)
     if (cargo[offset] == 0xFB && cargo_len >= 5) {
         offset += 5;
     }
 
-    // 3. Parse concatenated sensor reports
+    // 4. Parse concatenated sensor reports
     while (offset + 10 <= cargo_len) {
         uint8_t rid = cargo[offset];
         int16_t x = le16(&cargo[offset + 4]);
@@ -422,7 +440,9 @@ IMU_Data_t Read_IMU(void)
             offset += 10;
         }
         else {
-            break; // Stop parsing if we hit a report we didn't request
+            // Stop parsing if we hit a report we didn't request
+            // so we don't accidentally misalign the offset
+            break;
         }
     }
 
@@ -560,7 +580,7 @@ void Control_Update(void)
 		float vH_odom = counts_to_linear_mps(dDwH, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
 
 		// Calculate robot angular velocity (w) from the horizontal wheel
-		// (Assuming Vy = 0 due to non-holonomic constraints)
+		// (Assuming Vy = 0 due to non-holonomic constraints)w
 		float w_robot = vH_odom / DW_H_OFFSET_X;
 
 		// Calculate forward velocity (Vx) from the straight wheel
@@ -676,6 +696,22 @@ static void TX_Imu(const IMU_Data_t* d)
 	(void)HAL_UART_Transmit(&huart2, buf, sizeof(buf), UART_TX_TIMEOUT_MS);
 }
 
+static void TX_Battery(float voltage)
+{
+    // Buffer size is 3 bytes for the header (SOF, TYPE, LEN) + 4 bytes for the float
+    uint8_t buf[3 + sizeof(float)];
+
+    buf[0] = SOF;
+    buf[1] = TYPE_BATTERY;
+    buf[2] = sizeof(float); // Or use your LEN_BATTERY macro
+
+    // Copy the 4-byte float into the buffer starting at index 3
+    memcpy(&buf[3], &voltage, sizeof(float));
+
+    // Transmit the buffer over UART
+    (void)HAL_UART_Transmit(&huart2, buf, sizeof(buf), UART_TX_TIMEOUT_MS);
+}
+
 void Control_Packet(uint8_t Control_Byte)
 {
 	switch (Control_Byte)
@@ -692,6 +728,24 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
 	(void)HAL_UART_AbortReceive_IT(&huart2);
 	UART_StartRx();
+}
+
+uint32_t Read_ADC_Voltage(void) {
+    uint32_t adcValue = 0;
+
+    // Start the ADC conversion
+    HAL_ADC_Start(&hadc1);
+
+    // Wait for the conversion to finish (timeout of 10ms)
+    if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+        // Read the analog value
+        adcValue = HAL_ADC_GetValue(&hadc1);
+    }
+
+    // Stop the ADC (optional, but good practice for single conversions)
+    HAL_ADC_Stop(&hadc1);
+
+    return adcValue;
 }
 
 /* USER CODE END 0 */
@@ -733,10 +787,12 @@ int main(void)
   MX_I2C3_Init();
   MX_TIM14_Init();
   MX_TIM15_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
 	Motors_Init(); // Start these motors dih
 	IMU_Init(); // ts pmo sybau
+	HAL_ADC_Start(&hadc1);
 
 	// Initialize cmd timing so it starts "timed out" => ramps to 0 until first cmd arrives
 	last_cmd_ms = HAL_GetTick();
@@ -747,11 +803,16 @@ int main(void)
 	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
 	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
 	const uint32_t imu_period    = 1000U / 100;     // 10 ms  -> 100 Hz
+	const uint32_t battery_period    = 1000U / 10;     // 100 ms  -> 10 Hz
 
 	uint32_t currentTime;
 	uint32_t prevUpdateTime = 0;
 	uint32_t prevTXTime = 0;
 	uint32_t prevIMUTime = 0;
+	uint32_t prevBatteryTime = 0;
+	uint32_t raw_adc = 0;
+	float pin_voltage = 0;
+	float Battery_Voltage = 0;
 
 
   /* USER CODE END 2 */
@@ -765,25 +826,37 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 		currentTime = HAL_GetTick();
-
-		// RX watchdog to escape "header received but payload never completed"
 		UART_RxWatchdog();
 
+		// Control Loop
 		if( (currentTime - prevUpdateTime) >= tick_period){
 			Control_Update();
 			prevUpdateTime = currentTime;
 		}
 
+		// Odometry Loop
 		if( (currentTime - prevTXTime) >= odom_period){
 			TX_Odom();
 			prevTXTime = currentTime;
 		}
 
+		// Battery Info
+		if( (currentTime - prevBatteryTime) >= battery_period){
+			raw_adc = Read_ADC_Voltage();
+			pin_voltage = ((float)raw_adc * 3.3f) / 4095.0f;
+			float calibration_factor = 0.9848f;
+			Battery_Voltage = pin_voltage * ((100.0f + 22.0f) / 22.0f) * calibration_factor;
+			TX_Battery(Battery_Voltage);
+			prevBatteryTime = currentTime;
+		}
+
+		//IMU, maybe can be used one day
 		if( (currentTime - prevIMUTime) >= imu_period){
 			IMU_Data_t d = Read_IMU();   // consider bias removal here
 			TX_Imu(&d);
 			prevIMUTime = currentTime;
 		}
+
 	}
   /* USER CODE END 3 */
 }
@@ -832,6 +905,65 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.LowPowerAutoPowerOff = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.SamplingTimeCommon1 = ADC_SAMPLETIME_160CYCLES_5;
+  hadc1.Init.SamplingTimeCommon2 = ADC_SAMPLETIME_160CYCLES_5;
+  hadc1.Init.OversamplingMode = DISABLE;
+  hadc1.Init.TriggerFrequencyMode = ADC_TRIGGER_FREQ_HIGH;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLINGTIME_COMMON_1;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**

@@ -3,6 +3,7 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="true"/>
 	<list key="searchhistory">
+		<item value="odom"/>
 		<item value="400"/>
 		<item value="hi2c1"/>
 		<item value="hi2c"/>
@@ -17,7 +18,6 @@
 		<item value="rxPacket"/>
 		<item value="rx_byte"/>
 		<item value="theta"/>
-		<item value="TX_IMU"/>
 	</list>
 	<list key="replacehistory">
 		<item value="hi2c3"/>

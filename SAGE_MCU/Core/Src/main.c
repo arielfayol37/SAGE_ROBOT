@@ -206,7 +206,6 @@ typedef struct { // IMU data structure
 	float gx, gy, gz;    // rad/s
 } IMU_Data_t;
 
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -479,7 +478,6 @@ static float counts_to_linear_mps(int32_t delta_counts,
 	return meters / dt_s;
 }
 
-
 // Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
 void Motor_SetSpeed_L(float v)
 {
@@ -497,8 +495,6 @@ void Motor_SetSpeed_R(float v)
 	if (speed < 1300) speed = 1300;
 	__HAL_TIM_SET_COMPARE(PWM_TIM_R, PWM_CH_R, speed);
 }
-
-
 
 // v  = forward speed (m/s)
 // w  = angular speed (rad/s)
@@ -620,7 +616,6 @@ void Control_Update(void)
 	Motor_SetSpeed_R(desired_speed_R + uR);
 }
 
-
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance != USART2) return;
@@ -659,8 +654,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
 	}
 }
-
-
 
 static void TX_Odom(void)
 {
@@ -744,7 +737,6 @@ uint32_t Read_ADC_Voltage(void) {
 
     // Stop the ADC (optional, but good practice for single conversions)
     HAL_ADC_Stop(&hadc1);
-
     return adcValue;
 }
 
@@ -803,11 +795,13 @@ int main(void)
 	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
 	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
 	const uint32_t imu_period    = 1000U / 100;     // 10 ms  -> 100 Hz
+	const uint32_t battery_period    = 1000U / 10;     // 100 ms  -> 10 Hz
 
 	uint32_t currentTime;
 	uint32_t prevUpdateTime = 0;
 	uint32_t prevTXTime = 0;
 	uint32_t prevIMUTime = 0;
+	uint32_t prevBatteryTime = 0;
 	uint32_t raw_adc = 0;
 	float pin_voltage = 0;
 	float Battery_Voltage = 0;
@@ -824,32 +818,37 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 		currentTime = HAL_GetTick();
-
-		// RX watchdog to escape "header received but payload never completed"
 		UART_RxWatchdog();
 
+		// Control Loop
 		if( (currentTime - prevUpdateTime) >= tick_period){
 			Control_Update();
 			prevUpdateTime = currentTime;
 		}
 
+		// Odometry Loop
 		if( (currentTime - prevTXTime) >= odom_period){
 			TX_Odom();
+			prevTXTime = currentTime;
+		}
 
+		// Battery Info
+		if( (currentTime - prevBatteryTime) >= battery_period){
 			raw_adc = Read_ADC_Voltage();
 			pin_voltage = ((float)raw_adc * 3.3f) / 4095.0f;
 			float calibration_factor = 0.9848f;
 			Battery_Voltage = pin_voltage * ((100.0f + 22.0f) / 22.0f) * calibration_factor;
 			TX_Battery(Battery_Voltage);
-
-			prevTXTime = currentTime;
+			prevBatteryTime = currentTime;
 		}
 
+		//IMU, maybe can be used one day
 		if( (currentTime - prevIMUTime) >= imu_period){
 			IMU_Data_t d = Read_IMU();   // consider bias removal here
 			TX_Imu(&d);
 			prevIMUTime = currentTime;
 		}
+
 	}
   /* USER CODE END 3 */
 }

@@ -1,4 +1,4 @@
-15:13:03 **** Incremental Build of configuration Debug for project SAGE_MCU ****
+15:11:36 **** Incremental Build of configuration Debug for project SAGE_MCU ****
 make -j12 all 
 arm-none-eabi-gcc "../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal.d" -MT"Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal.o"
 arm-none-eabi-gcc "../Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_adc.c" -mcpu=cortex-m0plus -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32G0B1xx -c -I../Core/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc -I../Drivers/STM32G0xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32G0xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_adc.d" -MT"Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_adc.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_adc.o"
@@ -32,11 +32,11 @@ Finished building target: SAGE_MCU.elf
 arm-none-eabi-size  SAGE_MCU.elf 
 arm-none-eabi-objdump -h -S SAGE_MCU.elf  > "SAGE_MCU.list"
    text	   data	    bss	    dec	    hex	filename
-  68620	    468	   3116	  72204	  11a0c	SAGE_MCU.elf
+  68644	    468	   3116	  72228	  11a24	SAGE_MCU.elf
 Finished building: default.size.stdout
  
 Finished building: SAGE_MCU.list
  
 
-15:13:06 Build Finished. 0 errors, 0 warnings. (took 2s.883ms)
+15:11:39 Build Finished. 0 errors, 0 warnings. (took 2s.634ms)
 
