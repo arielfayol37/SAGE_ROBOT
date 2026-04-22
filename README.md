@@ -2,7 +2,7 @@
 
 **2026 Senior Design Project · Valparaiso University College of Engineering**
 
-[Video Demo](https://www.youtube.com/watch?v=HRWUCX_4h8A&list=PLIcrH01m1D4cKdDTaD45W4qkC3aI_CjJB&index=1)
+[Video Demo](https://www.youtube.com/watch?v=HRWUCX_4h8A&list=PLIcrH01m1D4cKdDTaD45W4qkC3aI_CjJB&index=1](https://youtu.be/TxUDpQGiT_E))
 
 SAGE is a custom-built autonomous mobile robot designed to tour visitors through the first floor of Gellersen Engineering at Valparaiso University. It navigates autonomously using a pre-built 2D LIDAR map, responds to natural voice commands via an LLM pipeline, streams live video to operators, and displays an animated face on an iPad in kiosk mode. The system runs on a **Jetson Orin Nano** (JetPack 6.1) with **ROS 2 Humble** as the middleware, and a **STM32G0B1** microcontroller handling low-level motor control and sensor I/O.
 
@@ -949,4 +949,4 @@ The speech system, knowledge base, and web interfaces are hardware-agnostic. Onl
 ---
 
 *Developed as part of Valparaiso University's Senior Design Program.*
-[Video Demo](https://www.youtube.com/watch?v=HRWUCX_4h8A&list=PLIcrH01m1D4cKdDTaD45W4qkC3aI_CjJB&index=1)
+[Video Demo](https://www.youtube.com/watch?v=HRWUCX_4h8A&list=PLIcrH01m1D4cKdDTaD45W4qkC3aI_CjJB&index=1](https://youtu.be/TxUDpQGiT_E))
