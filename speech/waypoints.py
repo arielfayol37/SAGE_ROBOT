@@ -59,8 +59,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "3D_PRINTING_LAB": {
         "frame_id": "map",
-        "x": 30.92706871032715, "y": 48.677703857421875,
-        "ox": 0.0, "oy": 0.0, "oz": 0.029439919652491053, "ow": 0.9995665516266813,
+        "x": 32.07948303222656, "y": 48.003971099853516,
+        "ox": 0.0, "oy": 0.0, "oz": 0.776731937068061, "ow": 0.629831324989872,
         "description": (
             "3D Printing Lab, a student space for 3D printing and fabrication projects."
         ),
@@ -146,8 +146,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "TRANSPORTATION_LAB": {
         "frame_id": "map",
-        "x": 45.52143859863281, "y": 49.71985626220703,
-        "ox": 0.0, "oy": 0.0, "oz": 0.722147618688998, "ow": 0.6917389802677087,
+        "x": 45.72543716430664, "y": 49.67884826660156,
+        "ox": 0.0, "oy": 0.0, "oz": 0.768492661787369, "ow": 0.6398586006134204,
         "description": (
             "Transportation Lab, a space for transportation engineering "
             "projects and research."
