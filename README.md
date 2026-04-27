@@ -372,7 +372,7 @@ The robot's heading is derived from the **horizontal dead wheel** (`vH / DW_H_OF
 
 ### Motor Drive
 
-Motors are driven by **ESC-style 50 Hz PWM** (TIM14 and TIM15). The center pulse width (1500 µs duty count) means zero speed; 1700 is maximum forward; 1300 is maximum reverse. The serial bridge disables reverse driving (`max_linear_vel` is clamped on the ROS side so the robot never drives backward, which would look odd during tours).
+Motors are driven by **ESC-style 50 Hz PWM** (TIM14 and TIM15). The center pulse width (1500 µs duty count) means zero speed; 1700 is maximum forward; 1300 is maximum reverse.
 
 ---
 
