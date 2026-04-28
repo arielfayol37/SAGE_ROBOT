@@ -155,8 +155,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "DOCKING_STATION": {
         "frame_id": "map",
-        "x": 30.72687339782715, "y": 56.54579544067383,
-        "ox": 0.0, "oy": 0.0, "oz": 0.7820948934178071, "ow": 0.6231593517630855,
+        "x": 30.64848518371582, "y": 57.46519088745117,
+        "ox": 0.0, "oy": 0.0, "oz": 0.7722411741137832, "ow": 0.635329496405893,
         "description": (
             "Docking Station, where the robot can charge and dock when not in use."
         ),

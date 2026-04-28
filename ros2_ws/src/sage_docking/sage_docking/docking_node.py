@@ -33,6 +33,17 @@ import tf2_ros
 from tf_transformations import euler_from_quaternion, quaternion_from_euler
 
 
+# Approach geometry
+CAMERA_OFFSET_X = 0.179         # m, camera_link forward offset from base_link
+TARGET_TAG_DISTANCE = 0.25      # m, desired final camera-to-tag distance
+TARGET_X_BASE = TARGET_TAG_DISTANCE + CAMERA_OFFSET_X  # = 0.429 m
+
+# "Done" tolerances
+DONE_X_TOL = 0.02               # m, x within ±2 cm of target
+DONE_Y_TOL = 0.03               # m, |y| below 3 cm
+DONE_YAW_TOL = 0.05             # rad, ~3°
+DONE_HOLD_TIME = 0.5            # s, must stay in tolerance this long
+
 # ---------- Tunable parameters ----------
 CONTROL_HZ = 20.0
 TAG_FRAME = 'dock_tag'
@@ -72,9 +83,9 @@ CONTACT_TIMEOUT = 8.0        # s after STOP to wait for voltage rise
 
 # Where the robot ends up (the known dock pose, in map frame).
 # Used to re-localize AMCL after successful dock. Update to match your map.
-DOCK_POSE_X = 30.65
-DOCK_POSE_Y = 57.47
-DOCK_POSE_YAW = 0.0
+DOCK_POSE_X = 30.38266
+DOCK_POSE_Y = 57.78290
+DOCK_POSE_YAW = 1.6792
 
 
 class DockingNode(Node):
@@ -197,8 +208,7 @@ class DockingNode(Node):
     def tick(self):
         twist = Twist()
 
-        if self.state == 'IDLE' or self.state in ('DOCKED', 'FAILED'):
-            self.cmd_pub.publish(twist)
+        if self.state in ('IDLE', 'DOCKED', 'FAILED'):
             return
 
         pose = self.get_tag_pose()
@@ -209,7 +219,9 @@ class DockingNode(Node):
             elif self.time_in_state() > SEARCH_TIMEOUT:
                 self.fail('Tag not found within SEARCH timeout')
             else:
-                twist.angular.z = SEARCH_OMEGA
+                # Forward arc — robot can't rotate in place reliably.
+                twist.linear.x = 0.06
+                twist.angular.z = 0.6
 
         elif self.state == 'ALIGN':
             if pose is None:
@@ -230,14 +242,36 @@ class DockingNode(Node):
                     self.attempt_recover('Tag lost during FINAL')
             else:
                 x, y, yaw = pose
-                if x <= FINAL_CONTACT_DIST:
-                    self.transition('STOP')
-                elif abs(y) > FINAL_LATERAL_ABORT:
-                    self.attempt_recover(f'Lateral error too large in FINAL: y={y:.2f}')
+                x_err = x - TARGET_X_BASE   # positive = need to move forward
+
+                # Done check
+                in_tol = (abs(x_err) < DONE_X_TOL and
+                        abs(y) < DONE_Y_TOL and
+                        abs(yaw) < DONE_YAW_TOL)
+                if in_tol:
+                    if self._in_tol_since is None:
+                        self._in_tol_since = self.get_clock().now()
+                    elif (self.get_clock().now() - self._in_tol_since).nanoseconds * 1e-9 >= DONE_HOLD_TIME:
+                        self.transition('STOP')
                 else:
-                    twist.linear.x = clamp(FINAL_KX * x, FINAL_VMIN, FINAL_VMAX)
-                    omega = -FINAL_KY * y - FINAL_KYAW * yaw
-                    twist.angular.z = clamp(omega, -FINAL_MAX_OMEGA, FINAL_MAX_OMEGA)
+                    self._in_tol_since = None
+
+                # Lateral abort
+                if abs(y) > FINAL_LATERAL_ABORT:
+                    self.attempt_recover(f'Lateral error too large: y={y:.2f}')
+                    return
+
+                # Drive toward target. Note x_err can go slightly negative — that means
+                # we've overshot. With reverse allowed, controller will back up gently.
+                v = clamp(FINAL_KX * x_err, -0.05, FINAL_VMAX)
+                # Avoid the in-place-rotation regime: if v would be in the dead zone,
+                # bias it to a small positive value so heading correction works.
+                if abs(v) < 0.04:
+                    v = 0.04 if x_err >= 0 else -0.04
+                twist.linear.x = v
+
+                omega = -FINAL_KY * y - FINAL_KYAW * yaw
+                twist.angular.z = clamp(omega, -FINAL_MAX_OMEGA, FINAL_MAX_OMEGA)
 
         elif self.state == 'RECOVER':
             now_xy = self.lookup_base_link_xy()
@@ -258,11 +292,9 @@ class DockingNode(Node):
         elif self.state == 'STOP':
             twist.linear.x = 0.0
             twist.angular.z = 0.0
-            if self.contact_confirmed():
+            if self.time_in_state() > 0.5:    # let it settle
                 self.relocalize_amcl()
                 self.transition('DOCKED')
-            elif self.time_in_state() > CONTACT_TIMEOUT:
-                self.attempt_recover('No charging voltage detected at STOP')
 
         self.cmd_pub.publish(twist)
 

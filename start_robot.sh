@@ -135,6 +135,7 @@ tmux new-window -t "$SESSION" -n "Battery Watchdog" "bash -lc '
   exec bash
 '"
 
+
 # 13) AprilTag detector
 tmux new-window -t "$SESSION" -n "AprilTag" "bash -lc '
   source $ROS_SETUP || true
