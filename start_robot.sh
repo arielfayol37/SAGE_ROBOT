@@ -38,7 +38,13 @@ tmux new-window -t "$SESSION" -n "Valpo KB" "bash -lc '
 # 2) Camera
 tmux new-window -t "$SESSION" -n "Camera" "bash -lc '
   source $ROS_SETUP || true
-  ros2 run v4l2_camera v4l2_camera_node --ros-args -p image_size:=[480,270] || { echo Camera failed; sleep 5; }
+  ros2 run v4l2_camera v4l2_camera_node --ros-args \
+    -p video_device:=/dev/video0 \
+    -p pixel_format:=YUYV \
+    -p image_size:=[800,600] \
+    -p output_encoding:=rgb8 \
+    -p time_per_frame:=[1,20] \
+    -p camera_frame_id:=camera_link || { echo Camera failed; sleep 5; }
   exec bash
 '"
 
@@ -129,7 +135,28 @@ tmux new-window -t "$SESSION" -n "Battery Watchdog" "bash -lc '
   exec bash
 '"
 
-# 13) Nav2
+# 13) AprilTag detector
+tmux new-window -t "$SESSION" -n "AprilTag" "bash -lc '
+  source $ROS_SETUP || true
+  source $WS_SETUP || true
+  ros2 run apriltag_ros apriltag_node --ros-args \
+    -r image_rect:=/image_raw \
+    -r camera_info:=/camera_info \
+    --params-file ~/Desktop/SAGE_ROBOT/config/apriltag.yaml || { echo apriltag failed; sleep 5; }
+  exec bash
+'"
+
+
+# 14) Docking Node
+tmux new-window -t "$SESSION" -n "Dock" "bash -lc '
+  source $ROS_SETUP || true
+  source $WS_SETUP || true
+  sleep 10  # Wait for apriltag to start
+  ros2 run sage_docking docking_node || { echo docking node failed; sleep 5; }
+  exec bash
+'"
+
+# 15)Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
