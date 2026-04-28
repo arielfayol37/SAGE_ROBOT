@@ -1,83 +1,140 @@
-// Pin definitions
+// -------- PIN DEFINITIONS --------
 const int LED_CATHODE = 7;
 const int LED_GREEN   = 9;
 const int LED_RED     = 5;
 const int MOSFET_EN   = 2;
 const int VOLT_PIN    = A0;
 
-// ADC / voltage settings
+// -------- ADC SETTINGS --------
 const float ADC_REF = 5.0;
 const int ADC_MAX = 1023;
 
-// Voltage thresholds (at A0 pin)
-const float ENABLE_VOLTAGE = 2.0;
-const float RED_VOLTAGE    = 4.0; // Threshold for changing LED colors
+// Divider ratio
+const float DIV_RATIO = 2.2 / 12.2;
 
-// LED brightness (small duty cycle)
-const int LED_BRIGHTNESS = 80;  // ~15% duty
+// -------- BATTERY THRESHOLDS --------
+const float RISE_THRESHOLD = 0.5;    // 0.5V battery rise per window
 
-// 30-minute timer for software reset (30 mins * 60 secs * 1000 ms)
-const unsigned long RESET_TIME_MS = 1800000;
+// -------- LED --------
+const int LED_BRIGHTNESS = 80;       // ~15% duty cycle
+const float RED_VOLTAGE  = 14.0;     // Battery voltage threshold for red LED
 
-// Standard Arduino trick to force a software reset
-void (*resetFunc)(void) = 0;
+// -------- TIMING --------
+const unsigned long STARTUP_OFF_TIME = 60000UL;
+const unsigned long SAMPLE_INTERVAL  = 100;
+const unsigned long WINDOW_TIME      = 5000UL;
+const unsigned long RESET_INTERVAL   = 600000UL;  // 10 minutes
+
+unsigned long lastSample  = 0;
+unsigned long windowStart = 0;
+unsigned long resetTimer  = 0;
+
+float sumVoltage = 0;
+int sampleCount  = 0;
+float lastWindowBattery = 0;
+
+bool chargerEnabled = false;
+
+// -------- FUNCTIONS --------
+
+float readBatteryVoltage() {
+  int raw = analogRead(VOLT_PIN);
+  float a0 = (raw * ADC_REF) / ADC_MAX;
+  return a0 / DIV_RATIO;
+}
+
+void updateLEDs(float battery) {
+  if (battery > RED_VOLTAGE) {
+    analogWrite(LED_GREEN, 0);
+    analogWrite(LED_RED, LED_BRIGHTNESS);
+  } else {
+    analogWrite(LED_RED, 0);
+    analogWrite(LED_GREEN, LED_BRIGHTNESS);
+  }
+}
+
+void softwareReset() {
+  digitalWrite(MOSFET_EN, LOW);
+  analogWrite(LED_GREEN, 0);
+  analogWrite(LED_RED, 0);
+  delay(100);
+  asm volatile ("jmp 0");
+}
 
 void setup() {
   pinMode(LED_CATHODE, OUTPUT);
-  pinMode(LED_GREEN, OUTPUT);
-  pinMode(LED_RED, OUTPUT);
-  pinMode(MOSFET_EN, OUTPUT);
+  pinMode(LED_GREEN,   OUTPUT);
+  pinMode(LED_RED,     OUTPUT);
+  pinMode(MOSFET_EN,   OUTPUT);
 
-  // Safe startup state (Charger OFF)
-  digitalWrite(MOSFET_EN, LOW);
+  digitalWrite(MOSFET_EN,   LOW);
   digitalWrite(LED_CATHODE, LOW);   // Sink current
   analogWrite(LED_GREEN, 0);
-  analogWrite(LED_RED, 0);
-}
+  analogWrite(LED_RED,   0);
 
-float readVoltage() {
-  int raw = analogRead(VOLT_PIN);
-  return (raw * ADC_REF) / ADC_MAX;
+  analogReference(DEFAULT);
+
+  // Flash both LEDs at startup to signal boot
+  analogWrite(LED_GREEN, LED_BRIGHTNESS);
+  analogWrite(LED_RED,   LED_BRIGHTNESS);
+  delay(500);
+  analogWrite(LED_GREEN, 0);
+  analogWrite(LED_RED,   0);
+
+  delay(STARTUP_OFF_TIME);          // 30s discharge window
+
+  windowStart = millis();
+  resetTimer  = millis();
 }
 
 void loop() {
-  int validReads = 0;
 
-  // 1. The Waiting Phase: Require 5 valid reads, 1 second apart
-  while (validReads < 5) {
-    // Check if 30 minutes have passed (safety timeout)
-    if (millis() >= RESET_TIME_MS) resetFunc();
-
-    float voltage = readVoltage();
-
-    if (voltage > ENABLE_VOLTAGE) {
-      validReads++;
-    } else {
-      validReads = 0;  // Reset the 5-second timer if voltage dips
-    }
-
-    delay(1000);
+  // -------- PERIODIC 10-MIN RESET --------
+  if (millis() - resetTimer >= RESET_INTERVAL) {
+    softwareReset();
   }
 
-  // 2. The Turn-On Phase: Enable MOSFET
-  digitalWrite(MOSFET_EN, HIGH);
+  // -------- SAMPLE --------
+  if (millis() - lastSample >= SAMPLE_INTERVAL) {
+    lastSample = millis();
 
-  // 3. The Charging & LED Loop
-  while (true) {
-    // Check if 30 minutes have passed (safety timeout triggers charger OFF via reboot)
-    if (millis() >= RESET_TIME_MS) resetFunc();
+    float battery = readBatteryVoltage();
+    sumVoltage += battery;
+    sampleCount++;
+  }
 
-    float voltage = readVoltage();
+  // -------- WINDOW EVALUATION --------
+  if (millis() - windowStart >= WINDOW_TIME) {
 
-    // Normal charging LED indication
-    if (voltage > RED_VOLTAGE) {
-      analogWrite(LED_GREEN, 0);
-      analogWrite(LED_RED, LED_BRIGHTNESS);
-    } else {
-      analogWrite(LED_RED, 0);
-      analogWrite(LED_GREEN, LED_BRIGHTNESS);
+    float avgBattery = sumVoltage / sampleCount;
+
+    // ----- STARTUP ENABLE -----
+    if (!chargerEnabled) {
+      if (avgBattery >= 11.5) {
+        digitalWrite(MOSFET_EN, HIGH);
+        chargerEnabled = true;
+      }
+    }
+    else {
+      // ----- UPDATE LEDs WHILE CHARGING -----
+      updateLEDs(avgBattery);
+
+      // ----- DISCONNECT DETECTION -----
+      float rise = avgBattery - lastWindowBattery;
+
+      if (rise > RISE_THRESHOLD) {
+        softwareReset();
+      }
+
+      if (avgBattery >= 16.5) {
+        softwareReset();
+      }
     }
 
-    delay(200);
+    // Prepare next window
+    lastWindowBattery = avgBattery;
+    sumVoltage  = 0;
+    sampleCount = 0;
+    windowStart = millis();
   }
 }
