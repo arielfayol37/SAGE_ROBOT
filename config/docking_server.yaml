@@ -1,0 +1,67 @@
+docking_server:
+  ros__parameters:
+    # === Server timing and tolerances ===
+    controller_frequency: 20.0
+    initial_perception_timeout: 5.0       # s to wait for first detection at staging
+    wait_charge_timeout: 5.0              # ignored when use_battery_status: false
+    dock_approach_timeout: 30.0           # s the fine-docking phase has to complete
+    undock_linear_tolerance: 0.05
+    undock_angular_tolerance: 0.1
+    max_retries: 3
+    base_frame: "base_link"
+    fixed_frame: "odom"
+    dock_backwards: false                 # SAGE docks forward
+    dock_prestaging_tolerance: 0.5        # m, skip Nav2 if already within this of staging
+
+    # === Approach controller ===
+    # k_phi/k_delta tune the graceful controller. Conservative starting values.
+    # Linear/angular limits respect the serial bridge's no-in-place-rotation regime.
+    controller:
+      k_phi: 3.0
+      k_delta: 2.0
+      beta: 0.4
+      lambda: 2.0
+      v_linear_min: 0.05
+      v_linear_max: 0.15
+      v_angular_max: 0.5
+      slowdown_radius: 0.25
+
+    # === Dock plugin ===
+    dock_plugins: ["sage_dock"]
+    sage_dock:
+      plugin: "opennav_docking::SimpleChargingDock"
+
+      # Done when robot's docked pose is within this of the computed target
+      docking_threshold: 0.05
+
+      # Staging pose is this far back from the dock pose along its facing direction.
+      # Negative because for forward-docking robots, staging is "in front of" the dock.
+      staging_x_offset: -1.0
+
+      # Use AprilTag detection
+      use_external_detection_pose: true
+      use_battery_status: false           # no charger yet
+      use_stall_detection: false
+      external_detection_timeout: 1.0     # s before considering tag "lost"
+
+      # Tag-to-docked-robot offset.
+      # Rotations bake in the optical->body convention so that translation_x
+      # below means "back from the tag along its outward normal" in body coords.
+      external_detection_rotation_roll: -1.5707963
+      external_detection_rotation_pitch: -1.5707963
+      external_detection_rotation_yaw: 3.14159
+
+      # Robot base_link should end up 0.429 m back from tag along its normal.
+      # = camera-to-tag (0.25) + camera offset from base_link (0.179)
+      external_detection_translation_x: -0.429
+      external_detection_translation_y: 0.0
+
+    # === Dock database ===
+    docks: ["sage_charger"]
+
+    sage_charger:
+      type: "sage_dock"
+      frame: "map"
+      # [tag_x, tag_y, tag_yaw_in_map_frame]
+      # Measured from `tf2_echo map dock_tag` while robot was in good docked pose.
+      pose: [30.498, 58.671, -1.471]

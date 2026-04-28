@@ -143,7 +143,9 @@ tmux new-window -t "$SESSION" -n "AprilTag" "bash -lc '
   ros2 run apriltag_ros apriltag_node --ros-args \
     -r image_rect:=/image_raw \
     -r camera_info:=/camera_info \
-    --params-file ~/Desktop/SAGE_ROBOT/config/apriltag.yaml || { echo apriltag failed; sleep 5; }
+    --params-file ~/Desktop/SAGE_ROBOT/config/apriltag.yaml &
+  sleep 2
+  ros2 run sage_docking dock_pose_publisher
   exec bash
 '"
 
@@ -153,7 +155,10 @@ tmux new-window -t "$SESSION" -n "Dock" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   sleep 10  # Wait for apriltag to start
-  ros2 run sage_docking docking_node || { echo docking node failed; sleep 5; }
+  ros2 run opennav_docking opennav_docking --ros-args \
+    --params-file ~/Desktop/SAGE_ROBOT/config/docking_server.yaml &
+  sleep 3
+  ros2 run nav2_util lifecycle_bringup docking_server
   exec bash
 '"
 

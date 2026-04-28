@@ -1,7 +1,7 @@
 /apriltag:
   ros__parameters:
     family: 36h11
-    size: 0.17145
+    size: 0.10702
     max_hamming: 0
     z_up: true
     detector:
@@ -13,4 +13,4 @@
     tag:
       ids: [0]
       frames: [dock_tag]
-      sizes: [0.17145]
+      sizes: [0.10702]

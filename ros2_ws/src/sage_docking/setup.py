@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'docking_node = sage_docking.docking_node:main',
-        ],
+            'dock_pose_publisher = sage_docking.dock_pose_publisher:main',
+	],
     },
 )
