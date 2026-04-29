@@ -155,18 +155,25 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "DOCKING_STATION": {
         "frame_id": "map",
-        "x": 30.649134208713093, "y": 57.51644528221906,
-        "ox": 0.0, "oy": 0.0, "oz": 0.7453124957201936, "ow": 0.6667152943523467,
+        "x": 30.658644839086893, "y": 57.15646536188647,
+        "ox": 0.0, "oy": 0.0, "oz": 0.7370844982903353, "ow": 0.6758005936517699,
         "description": (
             "Docking Station, where the robot can charge and dock when not in use."
         ),
+    },
+    "_DOCKED_POSE": {
+        "frame_id": "map",
+        "x": 30.726, "y": 58.187,
+        "ox": 0.0, "oy": 0.0, "oz": 0.7156, "ow": 0.6985,
+        "description": "Internal: where the robot physically ends up when docked. "
+                    "Not a destination — used by DockStateTracker for proximity.",
     },
 }
 
 
 def waypoint_names() -> list[str]:
-    """Sorted list of all known waypoint identifiers."""
-    return sorted(WAYPOINTS.keys())
+    """Sorted list of user-facing waypoint identifiers."""
+    return sorted(k for k in WAYPOINTS.keys() if not k.startswith("_"))
 
 
 def waypoint_descriptions_bulleted() -> str:

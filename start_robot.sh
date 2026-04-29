@@ -100,7 +100,7 @@ tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
-  cd \$HOME/Desktop/SAGE_ROBOT/speech
+  cd \$HOME/Desktop/SAGE_ROBOT/orchestrator
   \$HOME/Desktop/SAGE_ROBOT/.venv/bin/python main.py \
     || { echo speech failed; sleep 5; }
   exec bash
@@ -111,7 +111,7 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   cd $HOME/Desktop/SAGE_ROBOT
-  ros2 launch nav2_bringup localization_launch.py map:=/home/agi/Desktop/SAGE_ROBOT/maps/new_save_map.yaml \
+  ros2 launch nav2_bringup localization_launch.py map:=/home/agi/Desktop/SAGE_ROBOT/maps/gellersen_map.yaml \
   params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml || { echo localization + /map publisher failed; sleep 5; }
   exec bash
 '"
@@ -119,7 +119,7 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
 # 11) Direction of arrival server
 tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
-  cd $HOME/Desktop/SAGE_ROBOT/speech
+  cd $HOME/Desktop/SAGE_ROBOT/orchestrator
   python doa_server.py || { echo DOA server failed; sleep 5; }
   exec bash
 '"

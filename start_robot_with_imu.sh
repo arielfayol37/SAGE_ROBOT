@@ -112,7 +112,7 @@ tmux new-window -t "$SESSION" -n "Speech" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
-  cd \$HOME/Desktop/SAGE_ROBOT/speech
+  cd \$HOME/Desktop/SAGE_ROBOT/orchestrator
   \$HOME/Desktop/SAGE_ROBOT/.venv/bin/python main.py \
     || { echo speech failed; sleep 5; }
   exec bash
@@ -124,7 +124,7 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   cd $HOME/Desktop/SAGE_ROBOT
-  ros2 launch nav2_bringup localization_launch.py map:=/home/agi/Desktop/SAGE_ROBOT/maps/new_save_map.yaml \
+  ros2 launch nav2_bringup localization_launch.py map:=/home/agi/Desktop/SAGE_ROBOT/maps/gellersen_map.yaml \
   params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml || { echo localization + /map publisher failed; sleep 5; }
   exec bash
 '"
@@ -132,7 +132,7 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
 # 12) Direction of arrival server
 tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
-  cd $HOME/Desktop/SAGE_ROBOT/speech
+  cd $HOME/Desktop/SAGE_ROBOT/orchestrator
   python doa_server.py || { echo DOA server failed; sleep 5; }
   exec bash
 '"
@@ -148,12 +148,40 @@ tmux new-window -t "$SESSION" -n "Battery Watchdog" "bash -lc '
   exec bash
 '"
 
-# 14) Nav2
+
+# 14) AprilTag detector
+tmux new-window -t "$SESSION" -n "AprilTag" "bash -lc '
+  source $ROS_SETUP || true
+  source $WS_SETUP || true
+  ros2 run apriltag_ros apriltag_node --ros-args \
+    -r image_rect:=/image_raw \
+    -r camera_info:=/camera_info \
+    --params-file ~/Desktop/SAGE_ROBOT/config/apriltag.yaml &
+  sleep 2
+  ros2 run sage_docking dock_pose_publisher
+  exec bash
+'"
+
+
+# 15) Docking Node
+tmux new-window -t "$SESSION" -n "Dock" "bash -lc '
+  source $ROS_SETUP || true
+  source $WS_SETUP || true
+  sleep 10  # Wait for apriltag to start
+  ros2 run opennav_docking opennav_docking --ros-args \
+    --params-file ~/Desktop/SAGE_ROBOT/config/docking_server.yaml &
+  sleep 3
+  ros2 run nav2_util lifecycle_bringup docking_server
+  exec bash
+'"
+
+# 16)Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true
   ros2 launch nav2_bringup navigation_launch.py params_file:=/home/agi/Desktop/SAGE_ROBOT/config/nav2_params.yaml use_sim_time:=false map_subscribe_transient_local:=true || { echo nav2 failed; sleep 5; }
   exec bash
 '"
+
 
 

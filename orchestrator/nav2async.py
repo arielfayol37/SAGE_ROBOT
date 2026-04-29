@@ -37,7 +37,11 @@ class Nav2AsyncBridge(Node):
     STATUS_FAILED     = "failed"
     STATUS_CANCELLING = "cancelling"
 
-    def __init__(self, enqueue_arrival: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        enqueue_arrival: Callable[[str], None],
+        enqueue_failure: Callable[[str, str], None],  
+    ) -> None:  
         super().__init__("nav2_llm_bridge_async")
         self._action_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
         self._goal_handle: Optional[Any] = None
@@ -46,7 +50,7 @@ class Nav2AsyncBridge(Node):
         self.current_target: Optional[str] = None
         self.last_feedback: Dict[str, Any] = {}
         self._enqueue_arrival = enqueue_arrival
-
+        self._enqueue_failure = enqueue_failure
     # -- public API ----------------------------------------------------
 
     def set_goal(
@@ -139,10 +143,13 @@ class Nav2AsyncBridge(Node):
 
             else:
                 self.status = self.STATUS_FAILED
-                _log.warning(
-                    "Goal to %s finished with status %d",
-                    self.current_target, status_code,
-                )
+                reason = self._status_reason(status_code)
+                _log.warning("Goal to %s finished with status %d (%s)",
+                            self.current_target, status_code, reason)
+                try:
+                    self._enqueue_failure(self.current_target or "unknown", reason)
+                except Exception:
+                    _log.error("enqueue_failure callback failed", exc_info=True)
         except Exception:
             self.status = self.STATUS_FAILED
             _log.error("Result callback error", exc_info=True)
@@ -170,3 +177,10 @@ class Nav2AsyncBridge(Node):
         pose.pose.orientation.z = float(oz)
         pose.pose.orientation.w = float(ow)
         return pose
+
+    @staticmethod
+    def _status_reason(status_code: int) -> str:
+        return {
+            GoalStatus.STATUS_ABORTED: "Navigation aborted (path blocked or planning failed).",
+            GoalStatus.STATUS_CANCELED: "Navigation cancelled.",
+        }.get(status_code, f"Navigation ended unexpectedly (status {status_code}).")

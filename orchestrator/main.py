@@ -33,6 +33,7 @@ from tools import ToolRegistry, build_tool_schemas
 from ui_state_client import UIStatePublisher
 from utils import read_openai_key, play_wav
 from web_ptt import PushToTalkServer
+from waypoints import WAYPOINTS
 
 _log = logger.get("general")
 
@@ -80,7 +81,11 @@ class SageApp:
         self.llm_client = openai.OpenAI(api_key=api_key)
 
         # -- Navigation (lazy-start) -----------------------------------
-        self.nav = NavManager(enqueue_arrival=self._enqueue_arrival_proxy)
+        self.nav = NavManager(
+            enqueue_arrival=self._enqueue_arrival_proxy,
+            enqueue_failure=self._enqueue_failure_proxy,
+            waypoints=WAYPOINTS,
+        )
 
         # -- Tool registry ---------------------------------------------
         self.tool_schemas = build_tool_schemas()
@@ -97,6 +102,7 @@ class SageApp:
             tool_registry=self.tool_registry,
             is_recording=lambda: self._is_recording.is_set(),
             on_arrival=self._handle_arrival,
+            on_failure=self._handle_failure,
             shutdown_flag=lambda: self._shutdown.is_set(),
         )
 
@@ -182,6 +188,32 @@ class SageApp:
     def _enqueue_arrival_proxy(self, target: str) -> None:
         """Called from the Nav2 result callback (any thread)."""
         self.events.enqueue_arrival(target)
+
+    def _enqueue_failure_proxy(self, target: str, reason: str) -> None:
+        """Called from a result callback (any thread)."""
+        self.events.enqueue_failure(target, reason)
+
+    def _handle_failure(self, target: str, reason: str) -> None:
+        """Inject a failure event into history and trigger an LLM pass."""
+        failure_msg = f"[EVENT PROMPT] Could not reach {target}. Reason: {reason}"
+        with self._messages_lock:
+            self._messages.append({
+                "role": "system", "name": "event", "content": failure_msg,
+            })
+
+        with self._llm_lock:
+            reply = run_conversation_turn(
+                client=self.llm_client,
+                messages=self._messages,
+                messages_lock=self._messages_lock,
+                tool_schemas=self.tool_schemas,
+                tool_registry=self.tool_registry,
+                nav=self.nav,
+                tts=self.tts,
+                ui=self.ui,
+                config=self.cfg.llm,
+            )
+        _log.info("Failure announcement (%s): %d chars", target, len(reply))
 
     def _handle_arrival(self, target: str) -> None:
         """Inject an arrival event into history and trigger an LLM pass."""

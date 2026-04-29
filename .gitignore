@@ -1,15 +1,15 @@
 .*venv/
 __pycache__/
 *__pycache__/
-speech/api_keys.json
-speech/*.onnx
-speech/assets/models/piper/
+orchestrator/api_keys.json
+orchestrator/*.onnx
+orchestrator/assets/models/piper/
 *api_keys.json
 startup.err
 startup.log
 *.log
 *.err
-speech/realtimesst.log
+orchestrator/realtimesst.log
 package-lock.json
 node_modules/
 # ROS2 build, install, and log directories (not needed if already ignored by default)
@@ -49,4 +49,4 @@ backend/models/
 backend/
 
 # Tests
-speech/tests/
+orchestrator/tests/
