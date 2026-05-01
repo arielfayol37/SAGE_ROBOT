@@ -6,11 +6,7 @@ Owns rclpy lifecycle, the executor, and both action-client nodes
 ``set_goal_by_name`` that abstracts dock/undock from the LLM layer.
 """
 from __future__ import annotations
-
-import json
-import os
 import threading
-from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 from dock_state import DockStateTracker, DockState
 import logger
@@ -43,7 +39,7 @@ class NavManager:
         self._lock = threading.Lock()
 
         self._dock_tracker: Optional[DockStateTracker] = None
-
+        self._dock_after_arrival: bool = False
     # -- public API ----------------------------------------------------
 
     @property
@@ -97,8 +93,14 @@ class NavManager:
                 return "Already docked."
             if state in (DockState.DOCKING, DockState.UNDOCKING):
                 return f"Currently {state.value}; try again in a moment."
+
+            # Two-stage flow: Nav2 to staging waypoint, then docking action.
+            # The arrival interceptor below catches the Nav2 arrival and triggers
+            # _dock_node.dock(navigate_to_staging=False) once the robot is in place.
+            with self._lock:
+                self._dock_after_arrival = True
             self._dock_tracker.declare_attempting_dock()
-            return self._dock_node.dock(navigate_to_staging=True)
+            return self._send_nav_goal(location)
 
         # Normal Nav2 goal
         if location not in self._waypoints or location.startswith("_"):
@@ -118,13 +120,20 @@ class NavManager:
             return self._undock_then_navigate(location, allow_undock_failure=True)
 
         return self._send_nav_goal(location)
-
+    
     def cancel_active(self) -> str:
-        """Cancel whichever action is currently in flight."""
         if not self._started:
             return "No active goal."
 
-        # Try cancelling whichever is busy
+        with self._lock:
+            self._dock_after_arrival = False
+
+        state = self._dock_tracker.query()
+        if state == DockState.DOCKING:
+            self._dock_tracker.declare_dock_failed("cancelled by user")
+        elif state == DockState.UNDOCKING:
+            self._dock_tracker.declare_undock_failed("cancelled by user")
+
         cancelled = []
         if self._dock_node.is_busy():
             cancelled.append(self._dock_node.cancel())
@@ -234,13 +243,14 @@ class NavManager:
             rclpy.init()
 
         self._nav_node = Nav2AsyncBridge(
-            enqueue_arrival=self._enqueue_arrival,
-            enqueue_failure=self._enqueue_failure,
+            enqueue_arrival=self._on_nav_arrival_intercept,
+            enqueue_failure=self._on_nav_failure_intercept,
         )
         self._dock_node = OpenNavDockingBridge(
             on_dock_success=self._on_dock_success,
             on_undock_success=self._on_undock_success,
             on_failure=self._on_dock_failure,
+            waypoints=self._waypoints,   
         )
 
         # Dock state tracker — needs the docked physical pose, not staging
@@ -269,3 +279,36 @@ class NavManager:
         spin_thread.start()
         self._started = True
         _log.info("Nav + docking + dock-state bridges started")
+
+    def _on_nav_arrival_intercept(self, target: str) -> None:
+        """Called by Nav2AsyncBridge on arrival. Either fires docking or
+        forwards the event to the user's arrival handler.
+        """
+        with self._lock:
+            should_dock = self._dock_after_arrival and target == DOCK_WAYPOINT_NAME
+            if should_dock:
+                self._dock_after_arrival = False
+
+        if should_dock:
+            _log.info("Reached %s; triggering dock action", target)
+            self._dock_node.dock()
+            return
+
+        # Normal arrival — pass through to the original handler
+        self._enqueue_arrival(target)
+
+    def _on_nav_failure_intercept(self, target: str, reason: str) -> None:
+        """Called by Nav2AsyncBridge on failure. Cleans up dock-pending state
+        if relevant, then forwards.
+        """
+        with self._lock:
+            was_pending_dock = self._dock_after_arrival and target == DOCK_WAYPOINT_NAME
+            if was_pending_dock:
+                self._dock_after_arrival = False
+
+        if was_pending_dock:
+            # Mark the dock attempt as failed in the tracker (we declared
+            # attempting_dock when the nav goal was sent)
+            self._dock_tracker.declare_dock_failed(reason)
+
+        self._enqueue_failure(target, reason)

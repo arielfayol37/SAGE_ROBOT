@@ -162,7 +162,7 @@ tmux new-window -t "$SESSION" -n "Dock" "bash -lc '
   exec bash
 '"
 
-# 15)Nav2
+# 15) Nav2
 tmux new-window -t "$SESSION" -n "Nav2" "bash -lc '
   source $ROS_SETUP || true
   source $WS_SETUP || true

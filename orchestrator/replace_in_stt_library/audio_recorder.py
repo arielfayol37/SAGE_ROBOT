@@ -1516,7 +1516,6 @@ class AudioToTextRecorder:
             time_since_last_buffer_message = 0
             was_recording = False
             delay_was_passed = False
-            wakeword_detected_time = None
             wakeword_samples_to_remove = None
             self.allowed_to_early_transcribe = True
 
@@ -1661,7 +1660,6 @@ class AudioToTextRecorder:
                             if self.use_extended_logging:
                                 logger.debug('Debug: Wake word detected, updating variables')
                             self.wake_word_detect_time = time.time()
-                            wakeword_detected_time = time.time()
                             wakeword_samples_to_remove = int(self.sample_rate * self.wake_word_buffer_duration)
                             self.wakeword_detected = True
 

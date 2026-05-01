@@ -52,6 +52,8 @@ CHARGING_MAX_AGE_S = 5.0
 # How fresh TF must be to use it
 TF_MAX_AGE_S = 2.0
 
+# How long an "attempting" intent is trusted before we assume it crashed
+ATTEMPTING_MAX_AGE_S = 5 * 60   # 5 minutes — way longer than any real action
 
 class DockState(Enum):
     UNDOCKED  = "undocked"
@@ -87,6 +89,17 @@ class DockStateTracker:
         # Read last event from log if available
         self._last_event = self._read_last_event()
 
+        # If we crashed/rebooted mid-action, the in-flight intent is now lying.
+        # Resolve it as a failure so the tracker doesn't think an action is
+        # still running.
+        if self._last_event:
+            kind = self._last_event.get("kind")
+            if kind == "attempting_dock":
+                _log.info("Boot found stale attempting_dock; marking failed")
+                self._append_event("dock_failed", reason="process restarted mid-action")
+            elif kind == "attempting_undock":
+                _log.info("Boot found stale attempting_undock; marking failed")
+                self._append_event("undock_failed", reason="process restarted mid-action")
     # ------------------------------------------------------------------
     # ROS lifecycle
     # ------------------------------------------------------------------
@@ -236,9 +249,20 @@ class DockStateTracker:
         if self._last_event is None:
             return None
         age = time.time() - self._last_event.get("ts", 0.0)
+        kind = self._last_event.get("kind")
+
+        # In-flight states have a much shorter validity window.
+        # If we've been "attempting_dock" for 5 minutes, something crashed —
+        # forget that intent and let the tracker fall back on physical evidence.
+        if kind in ("attempting_dock", "attempting_undock"):
+            if age > ATTEMPTING_MAX_AGE_S:
+                return None
+            return kind
+
+        # Terminal events are valid for the full 24 hours
         if age > INTENT_MAX_AGE_S:
             return None
-        return self._last_event.get("kind")
+        return kind
 
     # ------------------------------------------------------------------
     # Internals: callbacks

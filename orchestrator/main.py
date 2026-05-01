@@ -129,6 +129,7 @@ class SageApp:
         self.ptt_server.start()
 
         self._init_recorder(device)
+
         _log.info("Ready to guide tours with streaming TTS")
 
         while not self._shutdown.is_set():
@@ -145,7 +146,7 @@ class SageApp:
 
             _log.info("User: %s", user_input)
             self._process_user_input(user_input)
-
+            
         self._teardown()
 
     # ==================================================================
@@ -235,7 +236,7 @@ class SageApp:
                 ui=self.ui,
                 config=self.cfg.llm,
             )
-        _log.info("Arrival announcement (%s): %d chars", target, len(reply))
+        _log.info("Arrival announcement (%s): %d chars. Content: %s", target, len(reply), reply)
 
     # ==================================================================
     # STT initialisation
@@ -258,6 +259,7 @@ class SageApp:
             silero_use_onnx=cfg.silero_use_onnx,
             silero_deactivity_detection=cfg.silero_deactivity_detection,
             max_recording_duration=cfg.max_recording_duration,
+            # wake_word_activation_delay=cfg.wake_word_activation_delay,
         )
 
         if cfg.use_wakeword:
@@ -272,7 +274,7 @@ class SageApp:
             )
 
         self.recorder = AudioToTextRecorder(**kwargs)
-
+        self.ui.idle()
     # ==================================================================
     # STT / wake-word callbacks
     # ==================================================================
@@ -297,10 +299,11 @@ class SageApp:
             self.tts.stop()
         if self.ui.last_phase != "listening":
             self.ui.listening()
-            chime = self.cfg.stt.ready_chime_path
-            threading.Thread(
-                target=play_wav, args=(chime,), daemon=True,
-            ).start()
+            if self.cfg.stt.say_chime:
+                chime = self.cfg.stt.ready_chime_path
+                threading.Thread(
+                    target=play_wav, args=(chime,), daemon=True,
+                ).start()
 
     # ==================================================================
     # Shutdown

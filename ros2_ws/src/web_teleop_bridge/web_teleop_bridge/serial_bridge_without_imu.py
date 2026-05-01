@@ -28,20 +28,25 @@ from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState
 from tf2_ros import TransformBroadcaster
+import json
+from std_msgs.msg import String as RosString
 
 # --- Protocol constants -------------------------------------------------------
 SOF          = 0x7E
 TYPE_ODOM    = 0x02
 TYPE_BATTERY = 0x04
 
+
 # Pre-compiled struct objects (faster than passing a format string every call)
 _S_ODOM    = struct.Struct('<fffff')    # x, y, th, v, w
 _S_BATTERY = struct.Struct('<f')        # voltage
 _S_TX      = struct.Struct('<Bff')      # 0x78, v, w
+_S_LED = struct.Struct("<BB")  # header, led_state
 
 LEN_ODOM    = _S_ODOM.size              # 20
 LEN_BATTERY = _S_BATTERY.size           # 4
 LEN_TX      = _S_TX.size                # 9
+
 
 # --- Reconnect policy ---------------------------------------------------------
 _RECONNECT_MIN_S = 0.25
@@ -114,7 +119,8 @@ class SerialBridgeNoImu(Node):
             f"TX:{self._cmd_topic} | RX->ODOM:{self._odom_topic} | "
             f"Frames: odom='{self._frame_odom}' base='{self._frame_base}'"
         )
-
+        self.create_subscription(
+            RosString, "/sage/ui_state_json", self.on_ui_state, 10)
     # --------------------------------------------------------------------------
     # Serial connection management
     # --------------------------------------------------------------------------
@@ -212,7 +218,7 @@ class SerialBridgeNoImu(Node):
         w = float(msg.angular.z)
 
         # Enforce a minimum usable turn speed when essentially stationary.
-        min_inplace_w = 0.7
+        min_inplace_w = 0.3
         stationary_v_thresh = 0.05
         if abs(v) < stationary_v_thresh and 0.0 < abs(w) < min_inplace_w:
             w = min_inplace_w if w > 0.0 else -min_inplace_w
@@ -233,6 +239,37 @@ class SerialBridgeNoImu(Node):
                 self._close_serial_unlocked()   # already holding the lock
             except Exception as e:
                 self.get_logger().error(f"Unexpected serial write error: {e}")
+                self._close_serial_unlocked()
+    
+    def on_ui_state(self, msg: RosString):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+
+        phase = data.get("phase", "idle")
+
+        phase_to_led = {
+            "idle": 0,
+            "listening": 1,
+            "thinking": 2,
+            "speaking": 3,
+            "searching": 4,
+            "error": 5,
+        }
+
+        led_mode = phase_to_led.get(phase, 0)
+
+        pkt = _S_LED.pack(0x79, led_mode)
+
+        with self._serial_lock:
+            ser = self.ser
+            if ser is None:
+                return
+            try:
+                ser.write(pkt)
+            except Exception as e:
+                self.get_logger().error(f"LED serial write failed: {e}")
                 self._close_serial_unlocked()
 
     # --------------------------------------------------------------------------

@@ -34,7 +34,7 @@ class BatteryWatchdog(Node):
         # At 50 Hz publish rate, 10 samples = 200 ms of sustained low voltage.
         self.declare_parameter('consecutive_low_required', 10)
         # Don't re-send reminders more often than this (seconds).
-        self.declare_parameter('cooldown_s', 300.0)
+        self.declare_parameter('cooldown_s', 1200.0)
         self.declare_parameter('http_timeout_s', 5.0)
 
         self.battery_topic   = self.get_parameter('battery_topic').value
