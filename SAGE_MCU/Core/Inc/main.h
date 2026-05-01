@@ -59,12 +59,14 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define PWM_1_Pin GPIO_PIN_12
-#define PWM_1_GPIO_Port GPIOC
 #define B1_Pin GPIO_PIN_13
 #define B1_GPIO_Port GPIOC
 #define MCO_Pin GPIO_PIN_0
 #define MCO_GPIO_Port GPIOF
+#define Right_Motor_PWM_Pin GPIO_PIN_1
+#define Right_Motor_PWM_GPIO_Port GPIOC
+#define Left_Motor_PWM_Pin GPIO_PIN_2
+#define Left_Motor_PWM_GPIO_Port GPIOC
 #define DeadWheel_2_B_Pin GPIO_PIN_1
 #define DeadWheel_2_B_GPIO_Port GPIOA
 #define USART2_TX_Pin GPIO_PIN_2
