@@ -49,8 +49,8 @@ class STTConfig:
     silero_deactivity_detection: bool = True
     max_recording_duration:   float = 12.0
     wakeword_backend:     str  = "openwakeword"
-    wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx,assets/models/wakeword/alexa_v0.1.onnx,assets/models/wakeword/hey_jarvis_v0.1.onnx"
-    # wakeword_model_path:  str  = "assets/models/wakeword/alexa_v0.1.onnx"
+    # wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx,assets/models/wakeword/alexa_v0.1.onnx,assets/models/wakeword/hey_jarvis_v0.1.onnx"
+    wakeword_model_path:  str  = "assets/models/wakeword/hey_jarvis_v0.1.onnx"
     wakeword_sensitivity: float = 0.6
     wakeword_buffer_dur:  float = 0.2
     wake_word:            str  = "sage"
