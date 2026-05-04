@@ -35,7 +35,7 @@ class LoggingConfig:
 @dataclass(frozen=True, slots=True)
 class TTSConfig:
     model_path:     str = "assets/models/piper/en_US-amy-medium.onnx"
-    aplay_device:   str = "pulse"
+    aplay_device:   str = "plughw:CARD=Array,DEV=0"
     buffer_time_us: int = 40_000
     period_size:    int = 256
 

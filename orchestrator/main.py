@@ -297,14 +297,13 @@ class SageApp:
     def _on_wakeword(self) -> None:
         if self.tts.is_playing():
             self.tts.stop()
-        if self.ui.last_phase != "listening":
-            self.ui.listening()
+        if self.ui.last_phase != "listening":            
             if self.cfg.stt.say_chime:
                 chime = self.cfg.stt.ready_chime_path
                 threading.Thread(
                     target=play_wav, args=(chime,), daemon=True,
                 ).start()
-
+        self.ui.listening()
     # ==================================================================
     # Shutdown
     # ==================================================================
