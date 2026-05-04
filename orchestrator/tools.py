@@ -40,8 +40,16 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
             "function": {
                 "name": "set_goal",
                 "description": (
-                    "Start or update Nav2 goal to a named waypoint.  "
-                    "Returns immediately."
+                    "Start or update the navigation goal to a named waypoint. "
+                    "Returns immediately with an acknowledgment, then continues "
+                    "in the background. If the navigation succeeds, you'll be "
+                    "told via an arrival event. If it fails (path blocked, "
+                    "marker not visible, etc.), you'll be told via a failure "
+                    "event with a reason — communicate that reason to the user "
+                    "naturally and offer alternatives if appropriate. "
+                    "DOCKING_STATION is special: navigating to it will dock the "
+                    "robot at the charger. Going elsewhere from DOCKING_STATION "
+                    "automatically undocks first."
                 ),
                 "parameters": {
                     "type": "object",
@@ -143,6 +151,19 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
                 "parameters": {"type": "object", "properties": {}},
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "dock_status",
+                "description": (
+                    "Get the current docking state of the robot. Returns one of: "
+                    "docked, undocked, docking, undocking, or unknown. Use this "
+                    "if the user asks whether you're charging, whether you're at "
+                    "the dock, or before suggesting they wait while you dock/undock."
+                ),
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
     ]
 
 
@@ -222,30 +243,19 @@ class ToolRegistry:
     # -- tool implementations ------------------------------------------
 
     def set_goal(self, location: str) -> str:
-        """Send a Nav2 goal for a named waypoint."""
+        """Send a navigation goal (handles waypoints, docking, undocking)."""
         self._nav.ensure_started()
 
-        if location not in WAYPOINTS:
-            valid = ", ".join(waypoint_names())
-            return f"Unknown location '{location}'.  Valid: {valid}"
-
-        wp = WAYPOINTS[location]
         with self._lock:
             self._nav_epoch += 1
             self._current_target = location
 
-        msg = self._nav.node.set_goal(
-            frame_id=wp.get("frame_id", "map"),
-            x=wp["x"], y=wp["y"],
-            ox=wp["ox"], oy=wp["oy"], oz=wp["oz"], ow=wp["ow"],
-            location_name=location,
-        )
-        return f"{msg} Target={location}."
+        return self._nav.set_goal_by_name(location)
 
     def cancel_goal(self) -> str:
-        """Cancel any active Nav2 goal."""
+        """Cancel any active navigation, dock, or undock goal."""
         self._nav.ensure_started()
-        return self._nav.node.cancel_goal()
+        return self._nav.cancel_active()
 
     def valpo_search(self, query: str, top_k: int = 3) -> str:
         """Query the local Valpo knowledge-base search endpoint."""
@@ -365,3 +375,7 @@ class ToolRegistry:
         result = {"primary_ip": primary, "all_ips": all_ips}
         _log.info("IP address query: %s", result)
         return json.dumps(result)
+    
+    def dock_status(self) -> str:
+        self._nav.ensure_started()
+        return self._nav.dock_state.value

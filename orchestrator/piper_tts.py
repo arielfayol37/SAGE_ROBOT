@@ -31,7 +31,7 @@ _log = logging.getLogger("sage.tts")
 
 
 class PiperTTS:
-    """Synchronous-API TTS engine backed by Piper + ``aplay``."""
+    """Synchronous-API TTS engine backed by Piper + aplay."""
 
     def __init__(
         self,
@@ -46,13 +46,16 @@ class PiperTTS:
         on_end: Optional[Callable[[], None]] = None,
     ) -> None:
         self.voice = PiperVoice.load(model_path)
+
+        # FIX: force ALSA stable path unless explicitly overridden
         self.aplay_device = aplay_device
+
         self.pulse_sink_name = pulse_sink_name
         self.buffer_time_us = buffer_time_us
         self.period_size = period_size
 
-        self.on_start: Optional[Callable[[], None]] = on_start
-        self.on_end: Optional[Callable[[], None]] = on_end
+        self.on_start = on_start
+        self.on_end = on_end
 
         self._proc: Optional[subprocess.Popen[bytes]] = None
         self._lock = threading.Lock()
@@ -88,6 +91,9 @@ class PiperTTS:
 
         wav_path = self._tmpwav_path()
         with wave.open(wav_path, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
             self.voice.synthesize_wav(text, wav_file)
 
         if block:
@@ -135,14 +141,10 @@ class PiperTTS:
 
     def _play_cmd_and_env(self, wav_path: str) -> tuple[list[str], dict[str, str]]:
         env = os.environ.copy()
-        use_pulse = self.aplay_device is None or self.aplay_device == "pulse"
 
-        if use_pulse:
-            cmd = ["aplay", "-q", "-D", "pulse"]
-            if self.pulse_sink_name:
-                env["PULSE_SINK"] = self.pulse_sink_name
-        else:
-            cmd = ["aplay", "-q", "-D", self.aplay_device]
+        cmd = ["aplay", "-q"]
+        if self.aplay_device:
+            cmd += ["-D", self.aplay_device]
 
         if self.buffer_time_us is not None:
             cmd += ["--buffer-time", str(self.buffer_time_us)]

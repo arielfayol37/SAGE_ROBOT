@@ -27,14 +27,14 @@ class BatteryWatchdog(Node):
         self.declare_parameter('voltage_threshold', 12.5)     # trigger below this
         self.declare_parameter('recovery_threshold', 13.0)    # clear alarm above this (hysteresis)
         self.declare_parameter('email_endpoint', 'http://localhost:8004/api/kb/send-emails')
-        self.declare_parameter('email_subject', 'ROBOT LOW BATTERY')
+        self.declare_parameter('email_subject', 'SAGE ROBOT LOW BATTERY')
         self.declare_parameter('email_text',
             'My battery level is low, please plug me in.')
         # Debounce: require this many consecutive low readings before firing.
         # At 50 Hz publish rate, 10 samples = 200 ms of sustained low voltage.
         self.declare_parameter('consecutive_low_required', 10)
         # Don't re-send reminders more often than this (seconds).
-        self.declare_parameter('cooldown_s', 300.0)
+        self.declare_parameter('cooldown_s', 1200.0)
         self.declare_parameter('http_timeout_s', 5.0)
 
         self.battery_topic   = self.get_parameter('battery_topic').value

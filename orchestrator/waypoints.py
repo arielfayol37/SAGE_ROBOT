@@ -59,8 +59,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "3D_PRINTING_LAB": {
         "frame_id": "map",
-        "x": 30.92706871032715, "y": 48.677703857421875,
-        "ox": 0.0, "oy": 0.0, "oz": 0.029439919652491053, "ow": 0.9995665516266813,
+        "x": 32.07948303222656, "y": 48.003971099853516,
+        "ox": 0.0, "oy": 0.0, "oz": 0.776731937068061, "ow": 0.629831324989872,
         "description": (
             "3D Printing Lab, a student space for 3D printing and fabrication projects."
         ),
@@ -74,7 +74,7 @@ WAYPOINTS: Dict[str, Waypoint] = {
             "and research work."
         ),
     },
-    "ECE_LAB_1": {
+    "ELECTRICAL_AND_COMPUTER_LAB_1": {
         "frame_id": "map",
         "x": -7.211533069610596, "y": 47.88065719604492,
         "ox": 0.0, "oy": 0.0, "oz": -0.707168915604687, "ow": 0.7070446413080939,
@@ -83,7 +83,7 @@ WAYPOINTS: Dict[str, Waypoint] = {
             "and collaborate.  Many workbenches and tools are available."
         ),
     },
-    "ECE_LAB_2": {
+    "ELECTRICAL_AND_COMPUTER_LAB_2": {
         "frame_id": "map",
         "x": -7.666999340057373, "y": 35.37744140625,
         "ox": 0.0, "oy": 0.0, "oz": 0.731044131015225, "ow": 0.6823301829086813,
@@ -146,8 +146,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "TRANSPORTATION_LAB": {
         "frame_id": "map",
-        "x": 45.52143859863281, "y": 49.71985626220703,
-        "ox": 0.0, "oy": 0.0, "oz": 0.722147618688998, "ow": 0.6917389802677087,
+        "x": 45.72543716430664, "y": 49.67884826660156,
+        "ox": 0.0, "oy": 0.0, "oz": 0.768492661787369, "ow": 0.6398586006134204,
         "description": (
             "Transportation Lab, a space for transportation engineering "
             "projects and research."
@@ -155,18 +155,25 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "DOCKING_STATION": {
         "frame_id": "map",
-        "x": 30.64848518371582, "y": 57.46519088745117,
-        "ox": 0.0, "oy": 0.0, "oz": -0.635329496405893, "ow": 0.7722411741137832,
+        "x": 30.94484893719163, "y": 57.21588404187549,
+        "ox": 0.0, "oy": 0.0, "oz": 0.7365178670895853, "ow": 0.6764180892449638,
         "description": (
             "Docking Station, where the robot can charge and dock when not in use."
         ),
+    },
+    "_DOCKED_POSE": {
+        "frame_id": "map",
+        "x": 30.726, "y": 58.187,
+        "ox": 0.0, "oy": 0.0, "oz": 0.7156, "ow": 0.6985,
+        "description": "Internal: where the robot physically ends up when docked. "
+                    "Not a destination — used by DockStateTracker for proximity.",
     },
 }
 
 
 def waypoint_names() -> list[str]:
-    """Sorted list of all known waypoint identifiers."""
-    return sorted(WAYPOINTS.keys())
+    """Sorted list of user-facing waypoint identifiers."""
+    return sorted(k for k in WAYPOINTS.keys() if not k.startswith("_"))
 
 
 def waypoint_descriptions_bulleted() -> str:

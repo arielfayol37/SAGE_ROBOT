@@ -1,10 +1,10 @@
-# SAGE Jarvis — Autonomous Campus Tour Robot
+# SAGE — Autonomous Campus Tour Robot
 
 **2026 Senior Design Project · Valparaiso University College of Engineering**
 
 [Video Demo](https://youtu.be/TxUDpQGiT_E)
 
-SAGE is a custom-built autonomous mobile robot designed to tour visitors through the first floor of Gellersen Engineering at Valparaiso University. It navigates autonomously using a pre-built 2D LIDAR map, responds to natural voice commands via an LLM pipeline, streams live video to operators, and displays an animated face on an iPad in kiosk mode. The system runs on a **Jetson Orin Nano** (JetPack 6.1) with **ROS 2 Humble** as the middleware, and a **STM32G0B1** microcontroller handling low-level motor control and sensor I/O.
+SAGE is a custom-built autonomous mobile robot designed to tour visitors through the first floor of Gellersen Engineering at Valparaiso University. It navigates autonomously using a 2D LIDAR map, responds to natural voice commands via an LLM pipeline, streams live video to operators, and displays an animated face on an iPad in kiosk mode. The system runs on a **Jetson Orin Nano** (JetPack 6.1) with **ROS 2 Humble** as the middleware, and a **STM32G0B1** microcontroller handling low-level motor control and sensor I/O.
 
 ---
 
@@ -25,7 +25,8 @@ SAGE is a custom-built autonomous mobile robot designed to tour visitors through
 13. [Libraries Installation & Modifications](#13-libraries-installation--modifications)
 14. [Known Issues & Debugging Guide](#14-known-issues--debugging-guide)
 15. [Porting to Another Robot](#15-porting-to-another-robot)
-16. [Acknowledgments](#16-acknowledgments)
+16. [Useful Resources](#16-useful-resources)
+17. [Acknowledgments](#17-acknowledgments)
 
 ---
 
@@ -43,10 +44,6 @@ Ask SAGE verbally: **"Hey Jarvis, what is your IP address?"**
 
 SAGE will respond with its current IP(s). You can then open its interfaces from any browser on the same network.
 
-Alternatively, connect to the Jetson over SSH if you already know the IP:
-```bash
-ssh agi@<sage-ip>
-```
 
 ### How to Reconnect SAGE to WiFi (Headless Jetson)
 
@@ -59,29 +56,35 @@ nmcli device wifi connect "SSID_NAME" password "PASSWORD"
 ```
 
 **Option B — Physical monitor (if SSH is not possible):**
-> If you only need to reconnect WiFi and do not need the GUI, you can skip steps 5–7 and just use `nmcli` in the terminal after connecting the monitor.
 
 1. Power off SAGE.
 2. Remove the Jetson from the robot (requires opening the lid).
 3. Connect the Jetson to a monitor via HDMI, and connect a keyboard.
 4. Power it on. It will boot headless (terminal only).
-5. Re-enable the Gnome desktop temporarily:
+5. Use the nmcli commands listed in option A above.
+6. Reinstall the Jetson in the robot
+7. Reboot SAGE. (Flip switch at the bottom left corner of robot)
+8. Teleop SAGE to docking station. Make sure she faces the wall/charger.
+9. Reboot one more time. She should be ready to go after ~5 mins.
+
+> If you need to enable the Gnome (default GUI for jetson) then do the following
+1. Re-enable the Gnome desktop temporarily:
    ```bash
    sudo systemctl set-default graphical.target
    sudo reboot
    ```
-6. After reboot, use the Gnome network manager GUI to reconnect to WiFi.
-7. Disable Gnome again to restore normal headless operation:
+2. After reboot, use the Gnome network manager GUI to reconnect to WiFi.
+3. Disable Gnome again to restore normal headless operation:
    ```bash
    sudo systemctl set-default multi-user.target
    sudo reboot
    ```
-8. Reinstall the Jetson in the robot and restart SAGE normally.
-
+> Remember to disable the Gnome desktop after you have activted it. It consumes a lot of memory.
 
 ### After Reconnecting
 
 Restart all SAGE services by powering down and restarting the robot at its docking station (there is a switch on the bottom left side).
+> Restart must be done at docking station with SAGE facing the wall/charger because that's SAGE's initial pose is set to be her docking station facing the wall.
 
 ---
 
@@ -488,14 +491,20 @@ Waypoints are defined in two places that must be kept in sync:
 | `DOCKING_STATION` | Robot charging/docking location |
 
 ### Adding or Updating a Waypoint
-
 1. Teleoperate SAGE to the desired location.
-2. Use RViz2 or `ros2 topic echo /amcl_pose` to read the current pose.
+2. Open a terminal and execute `ros2 topic echo /amcl_pose` to read the current pose.
 3. Add the pose to `maps/new_waypoints.yaml`.
 4. Add a matching entry to `speech/waypoints.py` with a `description` field (this description is injected into the LLM system prompt).
 5. Restart the speech process (window 9).
 
-Alternatively, you can open another terminal and execute `ros2 topic echo /goal_pose`, then open rviz2, click on "set goal pose", and use the mouse to indicate the desired pose. The terminal will log that pose. Then you can add it to `maps/new_waypoints.yaml` and match the entry in `speech/waypoints.py` with a description for this location.
+Alternatively, you can (this is actually how we did it):
+> Instructions on how to open Rviz2 in the debugging section #14 below.
+> If you don't want the robot to be moving while you are doing this, you can kill all sage-related processes by executing `tmux kill-session -t sage`.
+0. Kill sage-related processes by executing `tmux kill-session -t sage` (optional step)
+1. Open Rviz2
+2. Open another terminal and execute `ros2 topic echo /goal_pose`
+3. On Rviz2, click on "set goal pose" and use the mouse to click on the pose (location and orientation) of your desired waypoint. The other terminal will log that pose. Then you can add it to `maps/new_waypoints.yaml` and match the entry in `speech/waypoints.py` with a description for this location.
+4. If you did step 0, then move sage back to docking station, make sure it faces the wall/charging station, and reboot by turning on and off the switch at the bottom left of the robot.
 
 ### Updating the Initial Pose for the Docking Station
 
@@ -564,6 +573,13 @@ All tunable parameters are centralized here:
 | `PTT_PORT` | 8005 | Push-to-talk web server port |
 | `TTS_MODEL` | `en_US-amy-medium.onnx` | Piper TTS voice model |
 
+### Wakeword
+There are three active wakewords: Sage, Alexa, and Hey Jarvis. (located at ./speech/assets/models/wakeword)
+
+We trained the custom Sage wakeword using the simple Google Colab found at https://github.com/dscripka/openWakeWord#training-new-models. It worked well but struggled in ambient noise, hence we added "hey jarvis" and "alexa" that were made available by openwakeword and were trained on more data. 
+
+To be fair, the training data for the sage wakeword was entirely synthetic. We could have added samples with recordings of the ambient noise in Gellersen.
+
 ### LLM Persona & System Prompt (`speech/system_prompt.py`)
 
 SAGE's persona is **"SAGE Jarvis"** — a friendly, witty, and concise tour guide. The system prompt is rebuilt before each conversation turn and includes:
@@ -611,15 +627,15 @@ Reads the **XVF3800 mic array's AEC azimuth** via USB vendor control transfer an
 ### Knowledge Base (`knowledge_base/`)
 
 The knowledge base runs as a Docker Compose stack (PostgreSQL + Django web service).
-
-- **Content:** Tour talking points document (~8 pages) provided by Dean Doug Tougaw of the College of Engineering. The KB is sparse and would benefit from more ingested content (Valpo links, program descriptions, faculty, etc.)
+- **Django Environment:** `knowledge_base/.env.template` contains the template for the .env file in the same directory that defines environment variables for the knowledge base.
+- **Content:** Tour talking points document (~8 pages) provided by Dean Doug Tougaw of the College of Engineering. The KB is sparse and would benefit from more ingested content (Valpo links, program descriptions, faculty, etc.).
 - **API port:** 8004
 - **Search endpoint:** `POST /api/kb/search` with `{"query": "...", "top_k": 5}`
 - **Email endpoint:** `POST /api/kb/send-emails` (used by the battery watchdog)
 - **Embeddings:** OpenAI API (requires `OPENAI_API_KEY` set in the Django environment)
 - **Admin panel:** `http://<sage-ip>:8004/admin/`
 
-To add documents to the KB, go to the admin panel `http://<sage-ip>:8004/admin` and upload the new documents. They will be automatically injested.
+To add documents to the KB, go to the admin panel `http://<sage-ip>:8004/admin` and upload the new documents. They will be automatically injested. You will prompted for a username and password before login in, you can ask the administration to provide it to you.
 
 The KB data is **not committed to the repository**. A new deployment must re-ingest documents. 
 
@@ -632,6 +648,7 @@ The KB data is **not committed to the repository**. A new deployment must re-ing
 
 | Port | Service | Used By |
 |---|---|---|
+| 80   | Landing page: lists services with links to them
 | 8001 | Teleop interface (HTTP) | Operator browser |
 | 8002 | Face / status interface (Vite/React) | iPad in kiosk mode |
 | 8004 | Knowledge base API (Django) | Speech system, battery watchdog |
@@ -666,6 +683,11 @@ Accessible from any browser on the same network. Visitors can hold a button to s
 
 ## 11. Startup Procedures
 
+### Simple Startup
+> Sage by runs the ./start_robot.sh script on boot, so you shouldn't have to worry about starting sage besides flipping the switch.
+
+Make sure SAGE is at her docking station facing the wall/charger. Power down SAGE using the switch located at the bottom left of the robot. Then turn it ON. After a few minutes (~5), she should be ready to go.
+
 ### Prerequisites
 
 Before running any startup script, verify:
@@ -679,10 +701,14 @@ Before running any startup script, verify:
 8. API key files are in place (see Section 12)
 
 ### Full System Startup (Normal Operation)
+> You can always verify if sage-related processes have already been started by running `tmux ls`. If something is already running, you can kill it using `tmux kill-session -t sage`.
+
+
+After making sure there are sage-related processes running, you can manually start it using the bash script as follows:
 
 ```bash
 cd ~/Desktop/SAGE_ROBOT
-bash start_robot.sh
+./start_robot.sh
 ```
 
 This creates a `tmux` session named `sage` with 14 windows (0–13). To attach:
@@ -700,16 +726,20 @@ tmux kill-session -t sage
 ### SLAM Mode (Building a New Map)
 
 Use this when the map needs to be rebuilt (e.g., after significant furniture changes):
-```bash
-bash slam_robot.sh
-```
+1. Kill the running sage-related processes using `tmux kill-session -t sage`
+2. Place the robot at good starting point (that is going to be the origin of the map). We used the bio engineering lab for our origin. 
+3. Execute `slam_robot.sh` to start up the SLAM processes.
+4. Wait for a few minutes (~5), then drive the robot very slowly around the building using the teleop interface (set speed to 10%) which corresponds to 0.1m/s.
+5. You can view the map being built live by opening Rviz2.
+
+> Note Rviz2 on SAGE already has saved settings, so you shouldn't have to set it up. But if on a new machine, then you will have to set it up yourself. (AI can help you with this and there are YOUTUBE videos that are in the resources section below)
 
 This starts SLAM Toolbox in online async mode instead of AMCL. Teleoperate SAGE through the entire area to be mapped. Save the map with:
 ```bash
 ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap "{name: {data: '/home/agi/Desktop/SAGE_ROBOT/maps/new_save_map'}}"
 ```
 
-Alternatively you can save the map directly from rviz2:
+Alternatively you can save the map directly from Rviz2:
 In RViz2, go to Panels -> Add New Panel.
 Select SlamToolboxPlugin.
 Use the Save Map button in the panel to save your current session
@@ -720,8 +750,9 @@ Important: go to the directory where you saved the map (/home/agi/Desktop/SAGE_R
 
 ### IMU-Enabled Startup
 
+Same as the steps above but in step 3 use the following command instead:
 ```bash
-bash start_robot_with_imu.sh
+./start_robot_with_imu.sh
 ```
 
 Requires `serial_bridge.py` (instead of `serial_bridge_without_imu.py`) and the IMU to be properly calibrated. The robot must remain **stationary for 5 seconds** after the serial bridge starts for IMU bias calibration.
@@ -766,8 +797,27 @@ The knowledge base Django service also needs the OpenAI key set as an environmen
 
 ## 13. Libraries Installation & Modifications
 
+python_3_10_12_requirements.txt contains the libraries and their versions.
+
+So run `pip3 install -r python_3_10_12_requirements.txt`
+
+Now, that's not enough because the torch libraries installed won't be installed with cuda wheels, so the speech processing will be slow.
+
 ### `installing torch with cuda wheels`
-The speech processing is relatively quick because we are using the GPU cores on the jetson nano. If trying to reproduce this project, make sure you install torch with cuda wheels on your device. We used so Claude web search to to help us find the right link to install torch with cuda on the Jetson nano orin.
+The speech processing is relatively quick because we are using the GPU cores on the jetson nano. If trying to reproduce this project, make sure you install torch with cuda wheels on your device. 
+```bash
+pip install torch torchvision torchaudio --index-url https://pypi.jetson-ai-lab.dev/jp6/cu126/+simple
+```
+We used so Claude web search to to help us find the right link to install torch with cuda on the Jetson nano orin. 
+We also had to downgrade numpy
+```bash
+pip install "numpy<2"
+```
+And use this specific version of torchaudio
+```bash
+pip uninstall torchaudio -y
+pip install torchaudio==2.8.0 --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
+```
 
 ### `realtimestt` — `audio_recorder.py` Patch
 
@@ -800,12 +850,28 @@ Failing to apply this patch will likely cause silent failures or crashes in the 
 
 ## 14. Known Issues & Debugging Guide
 
+### How to Open Rviz2 and the remote desktop GUI in general
+1. Make sure the robot is ON.
+2. Open Remote Desktop on Windows or Windows App on Mac OS
+3. Connect to the robot using its IP
+4. You will be prompted to enter the username and password. If you do not have this information, ask the administration.
+5. Now you have access to the remote GUI. To open Rviz2, open a terminal, and execute `rviz2`.
+
+> To minimize memory usage, we are using a substitute for the Gnome Desktop (the default GUI of the jetson) that only comes ON when we remote desktop into the Robot.
+
 ### Diagnosing a Problem
 
 When something is wrong, the best first step is:
 1. Attach to the tmux session: `tmux attach -t sage`
 2. Cycle through windows (Ctrl+B, 0–13) looking for red error output
 3. Note which window is failing and read the traceback
+
+### Resolving a Problem
+The best advice here is to reboot the system! Simple but effective.
+1. Teleop sage to docking station, ensure it faces the wall/charging station.
+2. Turn OFF the entire system by flipping the switch at the bottom left of the robot.
+3. Wait for ~5mins and turn it back ON.
+4. Wait for ~5mins and the robot should be good to go.
 
 ### Issue: Robot Stops Navigating When People Get Too Close or Walls
 
@@ -895,14 +961,14 @@ If containers are not running: `docker compose up -d`
 
 ### Issue: AMCL Localization Jumps / Robot Is Lost
 
-**Symptom:** In RViz2, the particle cloud is spread out or in the wrong place; the robot drives as if it does not know where it is.
+**Symptom:** In RViz2, the particle cloud is spread out or in the wrong place; the robot drives as if it does not know where it is. 
 
 **Recovery:**
 1. Teleoperate SAGE to a recognizable location
 2. Use the "2D Pose Estimate" tool in RViz2 to set the approximate pose, or update `initial_pose_x/y/a` in `nav2_params.yaml` and restart window 10 (AMCL)
 3. Spin the robot slowly in place to help AMCL converge
 
-**Root cause:** AMCL can lose localization if odometry drifts significantly (see dead-wheel issue above) or if the environment has changed substantially since the map was built (furniture moved, new obstacles).
+**Root cause:** AMCL can lose localization if odometry drifts significantly (see dead-wheel issue above) or if the environment has changed substantially since the map was built (furniture moved, new obstacles). This can also happen if the scan window (height and width of local_costmap in nav2_params.yaml is too small). It used to get lost around Guelly Delly when the window size was set to 3. When we increased to 5, the issue was resolved.
 
 Alternatively, just reboot the robot from the docking station (it has to be booted from there because that's where the initial pose is set to be).
 
@@ -927,25 +993,33 @@ If the new robot uses a different MCU or firmware, update the serial protocol in
 
 Rebuild the map with SLAM Toolbox, then update the waypoint poses in `maps/new_waypoints.yaml` and `speech/waypoints.py`. Update `config/nav2_params.yaml` — particularly `robot_radius`, `inflation_radius`, and initial pose — to match the new robot's footprint.
 
-### Voice & LLM Layer (no changes required)
+### Voice & LLM Layer (super minimal changes required)
 
-The speech system, knowledge base, and web interfaces are hardware-agnostic. Only the waypoint descriptions and system prompt persona need updating for a different environment.
+The speech system, knowledge base, and web interfaces are hardware-agnostic. Only the api keys, waypoint descriptions, and system prompt persona need updating for a different environment.
 
 ---
 
-## 16. Acknowledgments
+## 16. Useful Resources
+
+The following YouTube playlist was helpful: https://youtube.com/playlist?list=PLunhqkrRNRhYAffV8JDiFOatQXuU-NnxT&si=fObfzoAWOqSp-yoU. 
+It goes over some foundational concepts and terms. 
+We skimmed over some videos like the simulation and teleop because we didn't want to waste time with simulations and our teleop approach was completely different, but overall was a useful playlist. 
+
+---
+
+## 17. Acknowledgments
 
 - Valparaiso University College of Engineering — facilities, support, and tour content
 - Dean Doug Tougaw, our customer, — provided funding and the Tour Talking Points document for the knowledge base
 - ROS 2, Nav2, SLAM Toolbox, and robot_localization open-source communities
 - OpenAI, Piper TTS, faster-whisper, openwakeword, and realtimestt projects
 - All faculty (especially Dr Georges El-Howayek our supervisor), students, and collaborators involved in testing and integration
-- Fayol Ateufack (CE) led the project, worked on the development and integration of navigation, speech, interfaces, and knowledge base + search queries software stack.
+- Fayol Ateufack (CE) led the team, worked on the development and integration of navigation, speech, interfaces, and knowledge base + search queries software stack.
 - Aidan Matson (ME) was the CTO, worked on designing + 3D printing the frame, coding the MCU, mounting the wheels, desiging PCB and overseeing battery safety + charging efforts.
 - Ranger Scott (EE) assembled the battery cells, designed the charging circuit, integrated battery chip, built the charger, printed the contacts. 
 - Samuel Starkenburg (ME) designed and printed the lid with integrated microphone, lidar, and camera as one seamless unit. Oversaw the design, printing, and setup of charging station's mechanical components.
 - Tobias Demonte (ME) worked on the design, printing, and testing of previous iterations of wheels. Designed and printed mounts for the speaker and battery. Led documentation efforts.
-- Zach Nieslen (CE) researched on speech components like the microphone, integrated the IMU sensor, contributed to design choices, and managed internal and external communication. 
+- Zach Nieslen (CE) researched on speech components like the microphone, integrated the IMU sensor, contributed to design choices, and managed internal and external communication (emails, posters, presentations). 
 ---
 
 *Developed as part of Valparaiso University's Senior Design Program.*

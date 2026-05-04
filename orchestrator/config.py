@@ -35,20 +35,19 @@ class LoggingConfig:
 @dataclass(frozen=True, slots=True)
 class TTSConfig:
     model_path:     str = "assets/models/piper/en_US-amy-medium.onnx"
-    aplay_device:   str = "pulse"
+    aplay_device:   str = "plughw:CARD=Array,DEV=0"
     buffer_time_us: int = 40_000
     period_size:    int = 256
-
 
 @dataclass(frozen=True, slots=True)
 class STTConfig:
     language:             str  = "en"
-    whisper_model:        str  = "small.en"
+    whisper_model:        str  = "medium.en"
     use_wakeword:         bool = True
     silero_use_onnx:      bool = True
     silero_sensitivity:   float = 0.6
     silero_deactivity_detection: bool = True
-    max_recording_duration:   float = 16.0
+    max_recording_duration:   float = 12.0
     wakeword_backend:     str  = "openwakeword"
     wakeword_model_path:  str  = "assets/models/wakeword/sage_wakeword_2.onnx,assets/models/wakeword/alexa_v0.1.onnx,assets/models/wakeword/hey_jarvis_v0.1.onnx"
     # wakeword_model_path:  str  = "assets/models/wakeword/alexa_v0.1.onnx"
@@ -56,7 +55,8 @@ class STTConfig:
     wakeword_buffer_dur:  float = 0.2
     wake_word:            str  = "sage"
     ready_chime_path:     str  = "assets/audio/ui-wakesound.wav"
-
+    wake_word_activation_delay: float = 3.0  # follow-up window after each reply
+    say_chime:            bool = False
 
 # ---------------------------------------------------------------------------
 # LLM

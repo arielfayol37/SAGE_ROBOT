@@ -1,0 +1,1 @@
+Copy the camera calibration file in this directory to ~/.ros/camera_info/ so you don't have to rerun the calibration from scratch if you are using the same camera.
