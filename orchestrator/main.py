@@ -26,13 +26,13 @@ import torch
 import logger
 from config import AppConfig
 from events import EventDispatcher
-from navigation import NavManager
-from piper_tts import PiperTTS
-from streaming import run_conversation_turn
-from tools import ToolRegistry, build_tool_schemas
+from nav.navigation import NavManager
+from speech.piper_tts import PiperTTS
+from llm.streaming import run_conversation_turn
+from llm.tools import ToolRegistry, build_tool_schemas
 from ui_state_client import UIStatePublisher
 from utils import read_openai_key, play_wav
-from web_ptt import PushToTalkServer
+from speech.web_ptt import PushToTalkServer
 from waypoints import WAYPOINTS
 
 _log = logger.get("general")

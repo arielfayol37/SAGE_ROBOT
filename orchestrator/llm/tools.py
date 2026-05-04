@@ -21,7 +21,7 @@ import logger
 from waypoints import WAYPOINTS, waypoint_names
 
 if TYPE_CHECKING:
-    from navigation import NavManager
+    from nav.navigation import NavManager
     from ui_state_client import UIStatePublisher
     from config import EndpointsConfig
 

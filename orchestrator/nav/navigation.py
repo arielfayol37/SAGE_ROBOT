@@ -8,7 +8,7 @@ Owns rclpy lifecycle, the executor, and both action-client nodes
 from __future__ import annotations
 import threading
 from typing import Any, Callable, Dict, Optional
-from dock_state import DockStateTracker, DockState
+from nav.dock_state import DockStateTracker, DockState
 import logger
 
 _log = logger.get("robot")
@@ -236,8 +236,8 @@ class NavManager:
         import rclpy
         from rclpy.executors import MultiThreadedExecutor
         from rclpy.node import Node
-        from nav2async import Nav2AsyncBridge
-        from opennav_async import OpenNavDockingBridge
+        from nav.nav2async import Nav2AsyncBridge
+        from nav.opennav_async import OpenNavDockingBridge
 
         if not rclpy.ok():
             rclpy.init()

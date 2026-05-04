@@ -24,13 +24,13 @@ from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, TYPE_C
 import openai
 
 import logger
-from system_prompt import build_system_prompt
+from llm.system_prompt import build_system_prompt
 
 if TYPE_CHECKING:
     from config import LLMConfig
-    from navigation import NavManager
-    from piper_tts import PiperTTS
-    from tools import ToolRegistry
+    from nav.navigation import NavManager
+    from speech.piper_tts import PiperTTS
+    from llm.tools import ToolRegistry
     from ui_state_client import UIStatePublisher
 
 _log = logger.get("general")
