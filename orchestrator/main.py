@@ -141,8 +141,10 @@ class SageApp:
                 logger.log_exception("recorder.text()")
                 continue
 
-            if not user_input:
-                continue
+            if not user_input and self.ui.last_phase == "listening" and not self.tts.is_playing():
+                # Scenario: wakeword fired but VAD never triggered, so
+                # _on_recording_stop was never called. Reset UI if stuck.
+                self.ui.idle()
 
             _log.info("User: %s", user_input)
             self._process_user_input(user_input)
