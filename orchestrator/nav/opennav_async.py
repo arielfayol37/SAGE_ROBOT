@@ -90,6 +90,11 @@ class OpenNavDockingBridge(Node):
 
         def _run():
             try:
+                # Clear any stale detection timestamp from the Nav2 approach so
+                # the "already visible?" check in _step_spin_search only counts
+                # detections from the current stationary position.
+                self._last_tag_msg_time = None
+
                 if not self._step_spin_search():
                     self.status = self.STATUS_FAILED
                     self._active_action = None
@@ -378,7 +383,7 @@ class OpenNavDockingBridge(Node):
             return True
 
         spin = Twist()
-        spin.angular.z = 0.4   # bridge will bump to ~0.7 rad/s
+        spin.angular.z = 0.3   
 
         while time.monotonic() < deadline:
             if self._tag_seen_recently():

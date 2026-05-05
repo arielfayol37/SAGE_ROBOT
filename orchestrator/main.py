@@ -26,13 +26,13 @@ import torch
 import logger
 from config import AppConfig
 from events import EventDispatcher
-from navigation import NavManager
-from piper_tts import PiperTTS
-from streaming import run_conversation_turn
-from tools import ToolRegistry, build_tool_schemas
+from nav.navigation import NavManager
+from speech.piper_tts import PiperTTS
+from llm.streaming import run_conversation_turn
+from llm.tools import ToolRegistry, build_tool_schemas
 from ui_state_client import UIStatePublisher
 from utils import read_openai_key, play_wav
-from web_ptt import PushToTalkServer
+from speech.web_ptt import PushToTalkServer
 from waypoints import WAYPOINTS
 
 _log = logger.get("general")
@@ -141,8 +141,10 @@ class SageApp:
                 logger.log_exception("recorder.text()")
                 continue
 
-            if not user_input:
-                continue
+            if not user_input and self.ui.last_phase == "listening" and not self.tts.is_playing():
+                # Scenario: wakeword fired but VAD never triggered, so
+                # _on_recording_stop was never called. Reset UI if stuck.
+                self.ui.idle()
 
             _log.info("User: %s", user_input)
             self._process_user_input(user_input)

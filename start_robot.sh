@@ -120,7 +120,7 @@ tmux new-window -t "$SESSION" -n "AMCL" "bash -lc '
 tmux new-window -t "$SESSION" -n "DOA" "bash -lc '
   source \$HOME/Desktop/SAGE_ROBOT/.venv/bin/activate
   cd $HOME/Desktop/SAGE_ROBOT/orchestrator
-  python doa_server.py || { echo DOA server failed; sleep 5; }
+  python speech/doa_server.py || { echo DOA server failed; sleep 5; }
   exec bash
 '"
 

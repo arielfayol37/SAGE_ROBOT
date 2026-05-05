@@ -21,7 +21,7 @@ import logger
 from waypoints import WAYPOINTS, waypoint_names
 
 if TYPE_CHECKING:
-    from navigation import NavManager
+    from nav.navigation import NavManager
     from ui_state_client import UIStatePublisher
     from config import EndpointsConfig
 
@@ -200,6 +200,7 @@ class ToolRegistry:
             "valpo_search": self.valpo_search,
             "web_search": self.web_search,
             "get_ip_address": self.get_ip_address,
+            "dock_status": self.dock_status,
         }
 
     # -- properties (thread-safe reads) --------------------------------

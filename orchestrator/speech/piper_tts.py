@@ -40,6 +40,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import re
 import subprocess
 import threading
 from typing import Callable, Optional
@@ -48,6 +49,25 @@ from piper import PiperVoice
 
 _log = logging.getLogger("sage.tts")
 _SENTINEL = object()
+
+# Word-boundary replacements for terms Piper mispronounces.
+# Entries are (compiled pattern, replacement) applied in order.
+_PRONUNCIATIONS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r'\bGellersen\b', re.IGNORECASE), 'Guellersen'),
+    (re.compile(r'\bHesse\b',     re.IGNORECASE), 'Hessi'),
+    (re.compile(r'\bECE\b'),                      'E-C-E'),
+    (re.compile(r'\bASME\b'),                     'A-S-M-E'),
+    (re.compile(r'\bASCE\b'),                     'A-S-C-E'),
+    (re.compile(r'\bSWE\b'),                      'SWEE'),
+    (re.compile(r'\bSHPE\b'),                     'SHIP'),
+    (re.compile(r'\bMEBE\b'),                     'M-E-B-E'),
+]
+
+
+def _normalize(text: str) -> str:
+    for pattern, replacement in _PRONUNCIATIONS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 class PiperTTS:
@@ -117,6 +137,7 @@ class PiperTTS:
         If no utterance is active, one is started automatically. Empty
         or whitespace-only fragments are ignored.
         """
+        text = _normalize(text)
         if not text or not text.strip():
             return
         if (
