@@ -274,6 +274,7 @@ class SageApp:
                 on_wakeword_detected=self._on_wakeword,
                 on_wakeword_timeout=self._on_wakeword_timeout,
                 wake_words=cfg.wake_word,
+                wake_word_timeout=cfg.wake_word_timeout,
             )
 
         self.recorder = AudioToTextRecorder(**kwargs)

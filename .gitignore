@@ -50,5 +50,6 @@ backend/
 
 # Tests
 orchestrator/tests/
+orchestrator/speech/tests/
 
 .claude

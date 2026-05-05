@@ -34,7 +34,7 @@ class LoggingConfig:
 
 @dataclass(frozen=True, slots=True)
 class TTSConfig:
-    model_path:     str = "assets/models/piper/en_US-amy-medium.onnx"
+    model_path:     str = "assets/models/piper/en_US-hfc_female-medium.onnx"
     aplay_device:   str = "plughw:CARD=Array,DEV=0"
     buffer_time_us: int = 40_000
     period_size:    int = 256
@@ -57,7 +57,7 @@ class STTConfig:
     ready_chime_path:     str  = "assets/audio/ui-wakesound.wav"
     wake_word_activation_delay: float = 3.0  # follow-up window after each reply
     say_chime:            bool = False
-
+    wake_word_timeout:    float = 7
 # ---------------------------------------------------------------------------
 # LLM
 # ---------------------------------------------------------------------------
