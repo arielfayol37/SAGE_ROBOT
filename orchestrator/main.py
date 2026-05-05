@@ -141,10 +141,10 @@ class SageApp:
                 logger.log_exception("recorder.text()")
                 continue
 
-            if not user_input and self.ui.last_phase == "listening" and not self.tts.is_playing():
-                # Scenario: wakeword fired but VAD never triggered, so
-                # _on_recording_stop was never called. Reset UI if stuck.
-                self.ui.idle()
+            if not user_input:
+                if self.ui.last_phase == "listening" and not self.tts.is_playing():
+                    self.ui.idle()
+                continue
 
             _log.info("User: %s", user_input)
             self._process_user_input(user_input)
@@ -272,6 +272,7 @@ class SageApp:
                 wake_words_sensitivity=cfg.wakeword_sensitivity,
                 wake_word_buffer_duration=cfg.wakeword_buffer_dur,
                 on_wakeword_detected=self._on_wakeword,
+                on_wakeword_timeout=self._on_wakeword_timeout,
                 wake_words=cfg.wake_word,
             )
 
@@ -299,13 +300,18 @@ class SageApp:
     def _on_wakeword(self) -> None:
         if self.tts.is_playing():
             self.tts.stop()
-        if self.ui.last_phase != "listening":            
+        if self.ui.last_phase != "listening":
             if self.cfg.stt.say_chime:
                 chime = self.cfg.stt.ready_chime_path
                 threading.Thread(
                     target=play_wav, args=(chime,), daemon=True,
                 ).start()
         self.ui.listening()
+
+    def _on_wakeword_timeout(self) -> None:
+        _log.debug("Wakeword timeout — no speech detected, resetting UI")
+        if not self.tts.is_playing():
+            self.ui.idle()
     # ==================================================================
     # Shutdown
     # ==================================================================
