@@ -200,6 +200,7 @@ class ToolRegistry:
             "valpo_search": self.valpo_search,
             "web_search": self.web_search,
             "get_ip_address": self.get_ip_address,
+            "dock_status": self.dock_status,
         }
 
     # -- properties (thread-safe reads) --------------------------------

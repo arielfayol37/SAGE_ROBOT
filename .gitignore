@@ -50,3 +50,5 @@ backend/
 
 # Tests
 orchestrator/tests/
+
+.claude

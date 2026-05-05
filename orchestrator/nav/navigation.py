@@ -40,6 +40,8 @@ class NavManager:
 
         self._dock_tracker: Optional[DockStateTracker] = None
         self._dock_after_arrival: bool = False
+        self._pending_after_undock: Optional[str] = None
+        self._undock_failure_ok: bool = False
     # -- public API ----------------------------------------------------
 
     @property

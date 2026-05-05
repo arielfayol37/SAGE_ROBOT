@@ -125,6 +125,7 @@ class Nav2AsyncBridge(Node):
             _log.error("Goal response error", exc_info=True)
 
     def _on_result(self, future: Any) -> None:
+        self._goal_handle = None
         try:
             result = future.result()
             status_code = result.status

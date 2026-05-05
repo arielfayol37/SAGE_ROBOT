@@ -273,14 +273,16 @@ class DockStateTracker:
         # (the field defaults to UNKNOWN, which we treat as "no signal").
         status = int(msg.power_supply_status)
         if status == BatteryState.POWER_SUPPLY_STATUS_CHARGING:
-            self._latest_charging = True
-            self._latest_charging_ts = time.time()
+            with self._lock:
+                self._latest_charging = True
+                self._latest_charging_ts = time.time()
         elif status in (
             BatteryState.POWER_SUPPLY_STATUS_DISCHARGING,
             BatteryState.POWER_SUPPLY_STATUS_NOT_CHARGING,
         ):
-            self._latest_charging = False
-            self._latest_charging_ts = time.time()
+            with self._lock:
+                self._latest_charging = False
+                self._latest_charging_ts = time.time()
         # POWER_SUPPLY_STATUS_UNKNOWN → don't update; we have no signal
 
     # ------------------------------------------------------------------
