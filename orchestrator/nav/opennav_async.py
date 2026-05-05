@@ -383,7 +383,7 @@ class OpenNavDockingBridge(Node):
             return True
 
         spin = Twist()
-        spin.angular.z = 0.3   
+        spin.angular.z = 0.5   
 
         while time.monotonic() < deadline:
             if self._tag_seen_recently():
@@ -401,7 +401,7 @@ class OpenNavDockingBridge(Node):
     def _step_spin_search(
         self,
         half_sweep_rad: float = math.radians(45),
-        step_rad: float = math.radians(5),
+        step_rad: float = math.radians(15),
         settle_s: float = 1.0,
         rotation_speed: float = 0.7,
     ) -> bool:
@@ -413,7 +413,7 @@ class OpenNavDockingBridge(Node):
         without detection.
 
         Total worst-case duration: 4 * half_sweep / step_rad * settle_s.
-        With defaults: 4 * 9 * 1.0 = 36 s.
+        With defaults: 4 * 3 * 1.0 = 12 s.
         """
         # Already visible? Done.
         time.sleep(1)
