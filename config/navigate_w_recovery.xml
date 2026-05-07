@@ -1,0 +1,57 @@
+<!--
+  Custom recovery BT for SAGE.
+
+  Key differences from Nav2 default:
+  - Spin and BackUp are wrapped in a Fallback: if Spin fails (collision check
+    aborts it), BackUp is tried immediately in the same recovery slot instead
+    of waiting for the next full navigation failure cycle.
+  - backup_speed raised 0.025 -> 0.15 m/s (snappier recovery feel).
+  - backup_dist raised 0.15 -> 0.30 m (enough clearance to replan after).
+
+  Recovery RoundRobin slots (6 retries total before aborting):
+    1. ClearCostmaps — removes stale marks; replans immediately
+    2. Spin OR BackUp — physical clearance; BackUp fires if Spin is blocked
+    3. Wait 5 s — last resort for temporary obstacles (people, etc.)
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathRecovery">
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+            <ReactiveFallback name="ComputePathRecoveryFallback">
+              <GoalUpdated/>
+              <ClearEntireCostmap name="ClearGlobalCostmap-Context"
+                service_name="global_costmap/clear_entirely_global_costmap"/>
+            </ReactiveFallback>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPathRecovery">
+          <FollowPath path="{path}" controller_id="FollowPath"/>
+          <ReactiveFallback name="FollowPathRecoveryFallback">
+            <GoalUpdated/>
+            <ClearEntireCostmap name="ClearLocalCostmap-Context"
+              service_name="local_costmap/clear_entirely_local_costmap"/>
+          </ReactiveFallback>
+        </RecoveryNode>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <RoundRobin name="RecoveryActions">
+          <Sequence name="ClearingActions">
+            <ClearEntireCostmap name="ClearLocalCostmap-Subtree"
+              service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Subtree"
+              service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+          <ReactiveFallback name="SpinOrBackUp">
+            <Spin spin_dist="1.57"/>
+            <BackUp backup_dist="0.30" backup_speed="0.15"/>
+          </ReactiveFallback>
+          <Wait wait_duration="5"/>
+        </RoundRobin>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>
