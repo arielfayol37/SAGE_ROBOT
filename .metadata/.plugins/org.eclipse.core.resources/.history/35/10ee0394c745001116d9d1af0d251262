@@ -1,0 +1,1910 @@
+/* USER CODE BEGIN Header */
+/**
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <stdlib.h> // Required for rand()
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+typedef struct {
+	TIM_HandleTypeDef *tim;
+	uint16_t last;
+	int32_t  accum;
+} encoder_if_t;
+
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+#define DEADWHEEL_DIAMETER_M     (0.08255f * 0.9866f) //4 in wheels in mm
+
+// --- Odometry Wheel Offsets ---
+// Lateral (Y) distance from robot center to the Straight wheel.
+// Positive if the wheel is to the left of the center.
+#define DW_S_OFFSET_Y  (0.1016f) // Adjust this to your robot's physical measurements (meters)
+
+// Forward (X) distance from robot center to the Horizontal wheel.
+// Positive if the wheel is forward of the center.
+#define DW_H_OFFSET_X  (0.400f) // Adjust this to your robot's physical measurements (meters)
+
+#define Lw  0.381 // Distance between wheels (m)
+#define WHEEL_DIAMETER  0.154f // Wheel size (m)
+#define GEAR_RATIO  0.714f // Ratio from the motor to the wheel
+#define Max_RPM  3000.0f // motor speed at 100% speed
+
+#define MOTOR_ENCODER_CPR        100       // counts per motor shaft rev (A or B channel edges before x4)
+#define ENC_XMULT          2          // 1,2,4 depending on your timer encoder mode
+#define ENCODER_COUNTS_PER_MOTOR_REV  ((MOTOR_ENCODER_CPR)*(ENC_XMULT))
+
+#define DW_ENCODER_CPR        600       // counts per motor shaft rev (A or B channel edges before x4) DEADWHEEL
+#define ENCODER_COUNTS_PER_DW_REV  ((DW_ENCODER_CPR)*(ENC_XMULT))
+
+#define DW_TIM_S                 (&htim1)          // assumed: TIM1 = Horizontal dead wheel
+#define DW_TIM_H                 (&htim2)          // assumed: TIM2 = straight dead wheel
+#define MOTOR_TIM_R              (&htim3)          // assumed: TIM3 = Right motor encoder
+#define MOTOR_TIM_L              (&htim4)          // assumed: TIM4 = Left motor encoder
+
+#define PWM_TIM_R                (&htim15)         // assumed: TIM15 ch1 drives Right ESC signal
+#define PWM_TIM_L                (&htim15)         // assumed: TIM15 ch2 drives Left ESC signal
+#define PWM_CH_R                 (TIM_CHANNEL_1)
+#define PWM_CH_L                 (TIM_CHANNEL_2)
+
+
+#define MOTOR_SIGN_L             (-1)
+#define MOTOR_SIGN_R             (+1)
+
+#define DW_SIGN_H                (+1)
+#define DW_SIGN_S                (+1)
+
+// Control loop rate
+#define CTRL_HZ            100.0f
+#define CTRL_DT            (1.0f/CTRL_HZ)
+
+// PID Coeff.
+#define KP                 1.0f //
+#define KI                 18.0f // was 12 but still struggles to reach speed quickly
+#define KD                 0.0f // 0
+
+// PWM output limit (percent)
+#define DUTY_MAX_PCT       100.0f
+#define DUTY_MIN_PCT       0.0f
+
+// Sign conventions
+#define DIR_FWD_STATE      GPIO_PIN_SET
+#define DIR_REV_STATE      GPIO_PIN_RESET
+
+// IMU defines
+
+#define BNO_ADDR              (0x4B << 1)
+#define BNO_CH_CONTROL        2
+#define BNO_CH_INPUT_REPORTS  3
+
+#define REPORTID_ACCELEROMETER    0x01
+#define REPORTID_GYROSCOPE        0x02
+#define REPORTID_MAGNETOMETER     0x03
+#define REPORTID_SET_FEATURE_CMD  0xFD
+
+#define MAX_ACCEL_MPS2   8.0f   // example: 0.5 m/s^2
+
+// --- Serial framing ---
+#define SOF            0x7E
+
+#define TYPE_CMD       0x01  // Host -> MCU: v,w
+#define TYPE_ODOM      0x02  // MCU -> Host: x,y,th,v,w
+#define TYPE_IMU       0x03  // MCU -> Host: gx,gy,gz, ax,ay,az
+#define TYPE_BATTERY   0x04  // MCU -> Host: Voltage
+#define TYPE_LED   0x05  // Host -> MCU: LED State
+
+// Payload sizes (bytes)
+#define LEN_CMD        (sizeof(float)*2)   // 8
+#define LEN_ODOM       (sizeof(float)*5)   // 20
+#define LEN_IMU        (sizeof(float)*6)   // 24
+
+#define CMD_TIMEOUT_MS          550U   // if no valid cmd for 250ms -> ramp to stop
+#define RX_PAYLOAD_TIMEOUT_MS   200U   // if header received but payload not completed in 50ms -> resync
+#define UART_TX_TIMEOUT_MS      5U     // keep control loop responsive under serial backpressure
+
+//LED control
+#define MAX_LED 118
+#define PIXEL_BITS 24
+#define RESET_SLOTS 100 // Massive reset pulse to cure ECO flicker
+#define PWM_HI 51
+#define PWM_LO 26
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
+I2C_HandleTypeDef hi2c3;
+
+TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
+TIM_HandleTypeDef htim15;
+TIM_HandleTypeDef htim16;
+DMA_HandleTypeDef hdma_tim16_ch1;
+
+UART_HandleTypeDef huart2;
+
+/* USER CODE BEGIN PV */
+
+volatile float desired_speed_L = 0.0f;     // m/s  (left wheel)
+volatile float desired_speed_R = 0.0f;     // m/s  (right wheel)
+
+volatile float speed_L = 0.0f;     // m/s  (left wheel)
+volatile float speed_R = 0.0f;     // m/s  (right wheel)
+
+// Commanded velocities from UART (do NOT reuse v/w which you use for measured odom)
+volatile float cmd_v = 0.0f;   // m/s commanded
+volatile float cmd_w = 0.0f;   // rad/s commanded
+volatile uint32_t last_cmd_ms = 0;
+
+// Encoder interfaces
+static encoder_if_t enc_motor_L_if = {0};
+static encoder_if_t enc_motor_R_if = {0};
+static encoder_if_t enc_dw_H_if    = {0};
+static encoder_if_t enc_dw_S_if    = {0};
+
+
+// UART RX framing state (byte-wise header hunt, then payload)
+typedef enum {
+	RX_WAIT_HEADER = 0,
+	RX_WAIT_PAYLOAD,
+	RX_WAIT_LED_PAYLOAD
+} rx_state_t;
+
+static volatile rx_state_t rx_state = RX_WAIT_HEADER;
+static uint8_t  rx_header_byte = 0;
+static uint8_t  rx_payload[9];              // 2 floats + 1 Byte = 9 bytes
+static volatile uint32_t rx_payload_start_ms = 0;
+
+// Forward decl helpers
+static void UART_StartRx(void);
+static void UART_RxWatchdog(void);
+
+static int32_t enc_prev_L = 0; // delta counts L
+static int32_t enc_prev_R = 0; // delta counts R
+
+float robot_X = 0.0f; // m
+float robot_Y = 0.0f; // m
+float robot_Theta = 0.0f; // rad
+
+// PI integrators
+static float i_term_L = 0.0f;
+static float i_term_R = 0.0f;
+
+// uint8_t rxPacket[9];  // 1 header + 8 bytes for two floats
+float v = 0.0f; // velocity m/s
+float w = 0.0f; // angular velocity rad/s
+
+uint8_t IM_buf[14]; // IMU data buffer
+
+typedef struct { // IMU data structure
+	float ax, ay, az;    // m/s^2
+	float gx, gy, gz;    // rad/s
+} IMU_Data_t;
+
+//LED stuff
+
+int current_head = 0;             // The position of the bright dot
+int move_dir = 1;                 // 1 for forward, -1 for backward
+uint32_t last_led_update = 0;     // Timestamps our last frame
+int current_brightness = 0;       // Ranges from 0 (off) to 255 (full brightness)
+int fade_step = 5;                // How much the brightness changes per frame
+uint32_t last_fade_update = 0;    // Timestamps our last frame
+volatile uint8_t current_led_mode = 3; //0 off, 1 listening, 2 thinking, 3 searching, 4 speaking, 5 idle, 64 rainbow, 65 confetti, 66 dual comet, 67 loop comet, 68 bouncing comet, 69 for unset
+uint8_t previous_led_mode = 255;       // Set to 255 to force a refresh on boot
+uint16_t dma_buffer[MAX_LED * PIXEL_BITS + RESET_SLOTS];
+uint8_t pixel_colors[MAX_LED][3];
+
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_TIM1_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
+static void MX_TIM4_Init(void);
+static void MX_I2C3_Init(void);
+static void MX_TIM15_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_TIM16_Init(void);
+/* USER CODE BEGIN PFP */
+void Motor_SetSpeed_L(float v);
+void Motor_SetSpeed_R(float v);
+IMU_Data_t Read_IMU(void);
+
+static inline void encoder_if_reset(encoder_if_t *e);
+static inline int16_t encoder_if_delta(encoder_if_t *e);
+static float counts_to_linear_mps(int32_t delta_counts,
+		float dt_s,
+		int32_t counts_per_rev,
+		float wheel_diameter_m);
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+static void UART_StartRx(void)
+{
+	rx_state = RX_WAIT_HEADER;
+
+	// Clear common UART error flags that can prevent RX after power-up noise
+	__HAL_UART_CLEAR_OREFLAG(&huart2);
+	__HAL_UART_CLEAR_NEFLAG(&huart2);
+	__HAL_UART_CLEAR_FEFLAG(&huart2);
+	__HAL_UART_CLEAR_PEFLAG(&huart2);
+	__HAL_UART_CLEAR_IDLEFLAG(&huart2);
+
+	// Arm reception of 1 byte (header hunt)
+	HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+}
+
+static void UART_RxWatchdog(void)
+{
+	// If we saw a header but never got the 8 payload bytes (line noise / host stop),
+	// abort and resync so we don't stay stuck forever.
+	if (rx_state == RX_WAIT_PAYLOAD) {
+		uint32_t now = HAL_GetTick();
+		if ((now - rx_payload_start_ms) > RX_PAYLOAD_TIMEOUT_MS) {
+			(void)HAL_UART_AbortReceive_IT(&huart2);
+			UART_StartRx();
+		}
+	}
+}
+
+static inline float clampf(float x, float lo, float hi) {
+	if (x < lo) return lo;
+	if (x > hi) return hi;
+	return x;
+}
+
+void Motors_Init(void)
+{
+	// Start PWM outputs (MOVED to TIM14/TIM15)
+	HAL_TIM_PWM_Start(PWM_TIM_R, PWM_CH_R);   // Right
+	HAL_TIM_PWM_Start(PWM_TIM_L, PWM_CH_L);   // Left
+
+	// Start encoder interfaces
+	HAL_TIM_Encoder_Start(MOTOR_TIM_L, TIM_CHANNEL_ALL);
+	HAL_TIM_Encoder_Start(MOTOR_TIM_R, TIM_CHANNEL_ALL);
+
+	// Deadwheel encoders (NEW)
+	HAL_TIM_Encoder_Start(DW_TIM_H, TIM_CHANNEL_ALL);
+	HAL_TIM_Encoder_Start(DW_TIM_S, TIM_CHANNEL_ALL);
+
+	Motor_SetSpeed_L(0.0f);
+	Motor_SetSpeed_R(0.0f);
+
+	// Bind encoder structs
+	enc_motor_L_if.tim = MOTOR_TIM_L;
+	enc_motor_R_if.tim = MOTOR_TIM_R;
+	enc_dw_H_if.tim    = DW_TIM_H;
+	enc_dw_S_if.tim    = DW_TIM_S;
+
+	// Reset counters + delta tracking
+	encoder_if_reset(&enc_motor_L_if);
+	encoder_if_reset(&enc_motor_R_if);
+	encoder_if_reset(&enc_dw_H_if);
+	encoder_if_reset(&enc_dw_S_if);
+
+	enc_prev_L = 0;
+	enc_prev_R = 0;
+}
+// BNO08x State Variables
+static uint8_t seq_nums[6] = {0};
+static uint8_t pkt_buf[256];
+static IMU_Data_t current_imu_data = {0}; // Stores latest readings for your TX loop
+
+// Little-endian conversion helper
+static int16_t le16(const uint8_t *p) {
+	return (int16_t)(((uint16_t)p[1] << 8) | p[0]);
+}
+
+// BNO08x Write Helper
+static HAL_StatusTypeDef bno_write_packet(uint8_t channel, const uint8_t *data, uint16_t data_len) {
+	uint8_t pkt[32];
+	uint16_t total_len = data_len + 4;
+	if (total_len > sizeof(pkt)) return HAL_ERROR;
+
+	pkt[0] = (uint8_t)(total_len & 0xFF);
+	pkt[1] = (uint8_t)((total_len >> 8) & 0x7F);
+	pkt[2] = channel;
+	pkt[3] = seq_nums[channel]++;
+
+	memcpy(&pkt[4], data, data_len);
+	return HAL_I2C_Master_Transmit(&hi2c3, BNO_ADDR, pkt, total_len, 100);
+}
+
+// BNO08x Feature Request Helper
+static void bno_send_set_feature(uint8_t report_id, uint32_t interval_us) {
+	uint8_t cmd[17] = {0};
+	cmd[0]  = REPORTID_SET_FEATURE_CMD;
+	cmd[1]  = report_id;
+	cmd[5]  = (uint8_t)(interval_us & 0xFF);
+	cmd[6]  = (uint8_t)((interval_us >> 8) & 0xFF);
+	cmd[7]  = (uint8_t)((interval_us >> 16) & 0xFF);
+	cmd[8]  = (uint8_t)((interval_us >> 24) & 0xFF);
+
+	bno_write_packet(BNO_CH_CONTROL, cmd, sizeof(cmd));
+}
+
+static void IMU_Init(void)
+{
+	// 1. Give the BNO08x time to boot its internal firmware upon cold power-up
+	HAL_Delay(400);
+
+	// 2. Try pinging the IMU a few times instead of just giving up on the first try
+	uint8_t retries = 15;
+	while (retries > 0) {
+		if (HAL_I2C_IsDeviceReady(&hi2c3, BNO_ADDR, 3, 100) == HAL_OK) {
+			break; // Found it!
+		}
+		HAL_Delay(150); // Wait a bit and try again
+		retries--;
+	}
+
+	if (retries == 0) {
+		const char *err = "IMU not found!\r\n";
+		HAL_UART_Transmit(&huart2, (uint8_t*)err, strlen(err), 100);
+		return; // Still didn't find it, abort init
+	}
+
+	const char *msg = "BNO08x Found!\r\n";
+	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+
+	HAL_Delay(100);
+
+	// 3. Drain startup packets
+	// NOTE: The BNO08x uses SHTP protocol. Blindly reading 128 bytes
+	// can sometimes misalign the I2C state machine. It is safer to read
+	// the 4-byte header first, then the payload, but for a quick drain:
+	for (int i = 0; i < 20; i++) {
+		uint8_t tmp[4];
+		// Just read the header to clear the interrupt/pending data
+		HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, tmp, 4, 10);
+		HAL_Delay(5);
+	}
+
+	HAL_Delay(50);
+
+	// Request Accel and Gyro at 10,000 us (100Hz) to match your main loop
+	bno_send_set_feature(REPORTID_ACCELEROMETER, 10000);
+	HAL_Delay(50);
+	bno_send_set_feature(REPORTID_GYROSCOPE, 10000);
+	HAL_Delay(50);
+}
+
+IMU_Data_t Read_IMU(void)
+{
+	// 1. Read a fixed chunk large enough for our expected reports (64 bytes).
+	// Doing this in ONE transaction prevents the I2C STOP condition from
+	// flushing the IMU's data buffer.
+	if (HAL_I2C_Master_Receive(&hi2c3, BNO_ADDR, pkt_buf, 64, 15) != HAL_OK) {
+		return current_imu_data; // return last known data if busy/failed
+	}
+
+	// 2. Parse the length from the first two bytes of our chunk
+	uint16_t pkt_len = ((uint16_t)(pkt_buf[1] & 0x7F) << 8) | pkt_buf[0];
+
+	// 3. If length is empty (<=4), invalid (0xFFFF), or larger than what we read, ignore it
+	if (pkt_len <= 4 || pkt_len > 64) {
+		return current_imu_data;
+	}
+
+	uint8_t channel = pkt_buf[2];
+	uint16_t cargo_len = pkt_len - 4;
+	uint8_t *cargo = &pkt_buf[4];
+
+	// We only care about Input Reports (Channel 3)
+	if (channel != BNO_CH_INPUT_REPORTS || cargo_len < 5) {
+		return current_imu_data;
+	}
+
+	uint16_t offset = 0;
+
+	// Skip timebase reference if present (0xFB)
+	if (cargo[offset] == 0xFB && cargo_len >= 5) {
+		offset += 5;
+	}
+
+	// 4. Parse concatenated sensor reports
+	while (offset + 10 <= cargo_len) {
+		uint8_t rid = cargo[offset];
+		int16_t x = le16(&cargo[offset + 4]);
+		int16_t y = le16(&cargo[offset + 6]);
+		int16_t z = le16(&cargo[offset + 8]);
+
+		if (rid == REPORTID_ACCELEROMETER) {
+			current_imu_data.ax = x / 256.0f;
+			current_imu_data.ay = y / 256.0f;
+			current_imu_data.az = z / 256.0f;
+			offset += 10;
+		}
+		else if (rid == REPORTID_GYROSCOPE) {
+			current_imu_data.gx = x / 512.0f;
+			current_imu_data.gy = y / 512.0f;
+			current_imu_data.gz = z / 512.0f;
+			offset += 10;
+		}
+		else {
+			// Stop parsing if we hit a report we didn't request
+			// so we don't accidentally misalign the offset
+			break;
+		}
+	}
+
+	return current_imu_data;
+}
+
+static inline void encoder_if_reset(encoder_if_t *e)
+{
+	__HAL_TIM_SET_COUNTER(e->tim, 0);
+	e->last  = 0;
+	e->accum = 0;
+}
+
+static inline int16_t encoder_if_delta(encoder_if_t *e)
+{
+	uint16_t now = __HAL_TIM_GET_COUNTER(e->tim);
+	int16_t d = (int16_t)(now - e->last);   // wrap-safe for 16-bit counters
+	e->last = now;
+	e->accum += d;
+	return d;
+}
+
+static float counts_to_linear_mps(int32_t delta_counts,
+		float dt_s,
+		int32_t counts_per_rev,
+		float wheel_diameter_m)
+{
+	if (dt_s <= 0.0001f) dt_s = CTRL_DT;
+
+	float revs = (float)delta_counts / (float)counts_per_rev;
+	float circumference = (float)M_PI * wheel_diameter_m;
+	float meters = revs * circumference;
+
+	return meters / dt_s;
+}
+
+// Set speed: 1000–2000: 1500 = 0 rpm, 2000 = full forward, 1000 = full reverse
+void Motor_SetSpeed_L(float v)
+{
+	uint16_t speed = 1500 + (v * 100);
+
+	if (speed > 1700) speed = 1700;
+	if (speed < 1300) speed = 1300;
+	__HAL_TIM_SET_COMPARE(PWM_TIM_L, PWM_CH_L, speed);
+}
+
+void Motor_SetSpeed_R(float v)
+{
+	uint16_t speed = 1500 - (v * 100);
+	if (speed > 1700) speed = 1700;
+	if (speed < 1300) speed = 1300;
+	__HAL_TIM_SET_COMPARE(PWM_TIM_R, PWM_CH_R, speed);
+}
+
+// v  = forward speed (m/s)
+// w  = angular speed (rad/s)
+// Lw = distance between wheels (m)
+void Robot_Set_Velocity(float v_in, float w_in)
+{
+	cmd_v = v_in;
+	cmd_w = w_in;
+	last_cmd_ms = HAL_GetTick();   // treat as a fresh command source
+}
+
+static inline float wrap_0_2pi(float a)
+{
+	const float two_pi = 2.0f * (float)M_PI;
+	a = fmodf(a, two_pi);
+	if (a < 0.0f) a += two_pi;
+	return a;
+}
+
+void Control_Update(void)
+{
+	static uint32_t last_ctrl_ms = 0;
+
+	uint32_t now_ms = HAL_GetTick();
+	float dt = CTRL_DT;
+	if (last_ctrl_ms != 0) {
+		uint32_t dms = now_ms - last_ctrl_ms;
+		dt = (float)dms * 0.001f;
+		dt = clampf(dt, 0.001f, 0.050f);
+	}
+	last_ctrl_ms = now_ms;
+
+	// --- Apply command timeout ---
+	float local_cmd_v = cmd_v;
+	float local_cmd_w = cmd_w;
+
+	if ((now_ms - last_cmd_ms) > CMD_TIMEOUT_MS) {
+		local_cmd_v = 0.0f;
+		local_cmd_w = 0.0f;
+	}
+
+	// Convert (v,w) command into wheel targets (drive kinematics)
+	float target_L = local_cmd_v + (local_cmd_w * Lw / 2.0f);
+	float target_R = local_cmd_v - (local_cmd_w * Lw / 2.0f);
+
+	// Slew-limit desired wheel speeds
+	const float max_dv = MAX_ACCEL_MPS2 * dt;
+	float stepL = clampf(target_L - desired_speed_L, -max_dv, +max_dv);
+	float stepR = clampf(target_R - desired_speed_R, -max_dv, +max_dv);
+	desired_speed_L += stepL;
+	desired_speed_R += stepR;
+
+	/* ========== 1) Motor speed feedback (TIM3/TIM4) for PI control ========== */
+	int16_t dMotorL = encoder_if_delta(&enc_motor_L_if) * MOTOR_SIGN_L;
+	int16_t dMotorR = encoder_if_delta(&enc_motor_R_if) * MOTOR_SIGN_R;
+
+	// motor encoder counts -> wheel m/s uses gear ratio + motor CPR
+	// (keep your original relationship)
+	// motor revs = counts / ENCODER_COUNTS_PER_MOTOR_REV
+	// wheel revs = motor revs / GEAR_RATIO
+	float motorL_revs = (float)dMotorL / (float)ENCODER_COUNTS_PER_MOTOR_REV;
+	float motorR_revs = (float)dMotorR / (float)ENCODER_COUNTS_PER_MOTOR_REV;
+	float wheelL_revs = motorL_revs / GEAR_RATIO;
+	float wheelR_revs = motorR_revs / GEAR_RATIO;
+	float wheel_circ  = (float)M_PI * WHEEL_DIAMETER;
+
+	float vL_meas = (wheelL_revs * wheel_circ) / dt;  // m/s
+	float vR_meas = (wheelR_revs * wheel_circ) / dt;  // m/s
+
+	speed_L = vL_meas;
+	speed_R = vR_meas;
+
+	/* ========== 2) ODOMETRY from deadwheels (TIM1/TIM2) ========== */
+	int16_t dDwH = encoder_if_delta(&enc_dw_H_if) * DW_SIGN_H;
+	int16_t dDwS = encoder_if_delta(&enc_dw_S_if) * DW_SIGN_S;
+
+	// Calculate raw linear velocities of each dead wheel
+	float vS_odom = counts_to_linear_mps(dDwS, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
+	float vH_odom = counts_to_linear_mps(dDwH, dt, ENCODER_COUNTS_PER_DW_REV, DEADWHEEL_DIAMETER_M);
+
+	// Calculate robot angular velocity (w) from the horizontal wheel
+	// (Assuming Vy = 0 due to non-holonomic constraints)w
+	float w_robot = vH_odom / DW_H_OFFSET_X;
+
+	// Calculate forward velocity (Vx) from the straight wheel
+	float v_robot = vS_odom + (w_robot * DW_S_OFFSET_Y);
+
+	// Integrate pose
+	robot_Theta += w_robot * dt;
+	robot_Theta = wrap_0_2pi(robot_Theta); // Using your wrap helper function
+
+	// Update X and Y position
+	robot_X += v_robot * cosf(robot_Theta) * dt;
+	robot_Y += v_robot * sinf(robot_Theta) * dt;
+
+	// Reported odom velocities
+	v = v_robot;
+	w = w_robot;
+
+	/* ========== 3) PI control using motor measured speeds ========== */
+	float eL = desired_speed_L - vL_meas;
+	float eR = desired_speed_R - vR_meas;
+
+	i_term_L += KI * eL * dt;
+	i_term_R += KI * eR * dt;
+
+	if ((fabsf(local_cmd_v) < 0.01f) && (fabsf(local_cmd_w) < 0.01f)) {
+		i_term_L *= 0.98f;
+		i_term_R *= 0.98f;
+	}
+
+	i_term_L = clampf(i_term_L, -0.8f, 0.8f);
+	i_term_R = clampf(i_term_R, -0.8f, 0.8f);
+
+	float uL = KP * eL + i_term_L;
+	float uR = KP * eR + i_term_R;
+
+	Motor_SetSpeed_L(desired_speed_L + uL);
+	Motor_SetSpeed_R(desired_speed_R + uR);
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance != USART2) return;
+
+	if (rx_state == RX_WAIT_HEADER)
+	{
+		if (rx_header_byte == 120) { // 'x' for Velocity
+			rx_state = RX_WAIT_PAYLOAD;
+			rx_payload_start_ms = HAL_GetTick();
+			HAL_UART_Receive_IT(&huart2, rx_payload, 8);
+		}
+		else if (rx_header_byte == 121) { // 'l' for LED Mode
+			rx_state = RX_WAIT_PAYLOAD;
+			rx_payload_start_ms = HAL_GetTick();
+			HAL_UART_Receive_IT(&huart2, rx_payload, 1);
+		}
+		else {
+			// Keep hunting for header
+			HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+		}
+	}
+	else // RX_WAIT_PAYLOAD
+	{
+		if (rx_header_byte == 120) {
+			float new_cmd_v = 0.0f;
+			float new_cmd_w = 0.0f;
+			memcpy(&new_cmd_v, &rx_payload[0],  sizeof(float));
+			memcpy(&new_cmd_w, &rx_payload[4],  sizeof(float));
+			cmd_v = new_cmd_v;
+			cmd_w = new_cmd_w;
+			last_cmd_ms = HAL_GetTick();
+		}
+		else if (rx_header_byte == 121) {
+			// Update the LED state machine
+			current_led_mode = rx_payload[0];
+		}
+
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		// Go back to header hunt (resync-friendly)
+		rx_state = RX_WAIT_HEADER;
+		HAL_UART_Receive_IT(&huart2, &rx_header_byte, 1);
+	}
+}
+
+static void TX_Odom(void)
+{
+	uint8_t buf[3 + LEN_ODOM]; // SOF, TYPE, LEN + payload
+	buf[0] = SOF;
+	buf[1] = TYPE_ODOM;
+	buf[2] = LEN_ODOM;
+
+	// payload: x, y, theta, v, w (float32 LE)
+	memcpy(&buf[3],      &robot_X,   4);
+	memcpy(&buf[3 + 4],  &robot_Y,   4);
+	memcpy(&buf[3 + 8],  &robot_Theta, 4);
+	memcpy(&buf[3 + 12], &v, 4);
+	memcpy(&buf[3 + 16], &w, 4);
+
+	(void)HAL_UART_Transmit(&huart2, buf, sizeof(buf), UART_TX_TIMEOUT_MS);
+}
+
+/*
+static void TX_Imu(const IMU_Data_t* d)
+{
+	uint8_t buf[3 + LEN_IMU];
+	buf[0] = SOF;
+	buf[1] = TYPE_IMU;
+	buf[2] = LEN_IMU;
+
+	memcpy(&buf[3],      &d->gx, 4);
+	memcpy(&buf[3 + 4],  &d->gy, 4);
+	memcpy(&buf[3 + 8],  &d->gz, 4);
+	memcpy(&buf[3 + 12], &d->ax, 4);
+	memcpy(&buf[3 + 16], &d->ay, 4);
+	memcpy(&buf[3 + 20], &d->az, 4);
+
+	(void)HAL_UART_Transmit(&huart2, buf, sizeof(buf), UART_TX_TIMEOUT_MS);
+}
+*/
+
+static void TX_Battery(float voltage)
+{
+	// Buffer size is 3 bytes for the header (SOF, TYPE, LEN) + 4 bytes for the float
+	uint8_t buf[3 + sizeof(float)];
+
+	buf[0] = SOF;
+	buf[1] = TYPE_BATTERY;
+	buf[2] = sizeof(float); // Or use your LEN_BATTERY macro
+
+	// Copy the 4-byte float into the buffer starting at index 3
+	memcpy(&buf[3], &voltage, sizeof(float));
+
+	// Transmit the buffer over UART
+	(void)HAL_UART_Transmit(&huart2, buf, sizeof(buf), UART_TX_TIMEOUT_MS);
+}
+
+void Control_Packet(uint8_t Control_Byte)
+{
+	switch (Control_Byte)
+	{
+	case 69: // Stop
+		NVIC_SystemReset(); // reset the MCU
+		break;
+	}
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance != USART2) return;
+
+	(void)HAL_UART_AbortReceive_IT(&huart2);
+	UART_StartRx();
+}
+
+uint32_t Read_ADC_Voltage(void) {
+	uint32_t adcValue = 0;
+
+	// Start the ADC conversion
+	HAL_ADC_Start(&hadc1);
+
+	// Wait for the conversion to finish (timeout of 10ms)
+	if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+		// Read the analog value
+		adcValue = HAL_ADC_GetValue(&hadc1);
+	}
+
+	// Stop the ADC (optional, but good practice for single conversions)
+	HAL_ADC_Stop(&hadc1);
+	return adcValue;
+}
+
+// LED zone ----------------------------------
+
+void WS2812_Set_LED(int led_idx, uint8_t r, uint8_t g, uint8_t b) {
+	uint32_t color = (g << 16) | (r << 8) | b;
+
+	for (int i = 0; i < 24; i++) {
+		if (color & (1 << (23 - i))) {
+			dma_buffer[led_idx * 24 + i] = PWM_HI;
+		} else {
+			dma_buffer[led_idx * 24 + i] = PWM_LO;
+		}
+	}
+}
+
+void WS2812_Update(void) {
+	// Fill the reset latch with 0s
+	for (int i = MAX_LED * PIXEL_BITS; i < (MAX_LED * PIXEL_BITS + RESET_SLOTS); i++) {
+		dma_buffer[i] = 0;
+	}
+
+	// Start DMA on TIM16
+	HAL_TIM_PWM_Start_DMA(&htim16, TIM_CHANNEL_1, (uint32_t *)dma_buffer, (MAX_LED * PIXEL_BITS) + RESET_SLOTS);
+}
+
+// Stop the DMA when finished so it doesn't loop and flicker
+void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim) {
+	if (htim->Instance == TIM16) {
+		HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_1);
+	}
+}
+
+
+void Draw_Bouncing_Comet(void) {
+	// 1. Fade all existing pixels slightly to create the "tail"
+	for (int i = 0; i < MAX_LED; i++) {
+		// Multiply by 3 and divide by 4 reduces brightness to 75%
+		pixel_colors[i][0] = (pixel_colors[i][0] * 7) / 8; // Red
+		pixel_colors[i][1] = (pixel_colors[i][1] * 7) / 8; // Green
+		pixel_colors[i][2] = (pixel_colors[i][2] * 7) / 8; // Blue
+	}
+
+	// 2. Draw the bright "head" of the comet
+	// Let's make it a bright fiery orange/red
+	pixel_colors[current_head][0] = 0; // Red
+	pixel_colors[current_head][1] = 120;  // Green
+	pixel_colors[current_head][2] = 255;   // Blue
+
+	// 3. Push our software pixel array to the DMA hardware buffer
+	for (int i = 0; i < MAX_LED; i++) {
+		WS2812_Set_LED(i, pixel_colors[i][0], pixel_colors[i][1], pixel_colors[i][2]);
+	}
+
+	// 4. Move the head for the next frame
+	current_head += move_dir;
+
+	// 5. Bounce off the ends
+	if (current_head >= MAX_LED) {
+		current_head = MAX_LED - 2; // Step back inside bounds
+		move_dir = -1;              // Reverse direction
+	} else if (current_head < 0) {
+		current_head = 1;           // Step back inside bounds
+		move_dir = 1;               // Reverse direction
+	}
+}
+
+void Draw_Looping_Comet(void) {
+	// 1. Fade all existing pixels slightly to create the "tail"
+	for (int i = 0; i < MAX_LED; i++) {
+		// Multiply by 7 and divide by 8 reduces brightness to 87.5%
+		pixel_colors[i][0] = (pixel_colors[i][0] * 3) / 4; // Red
+		pixel_colors[i][1] = (pixel_colors[i][1] * 3) / 4; // Green
+		pixel_colors[i][2] = (pixel_colors[i][2] * 3) / 4; // Blue
+	}
+
+	// 2. Draw the bright "head" of the comet
+	pixel_colors[current_head][0] = 255;   // Red
+	pixel_colors[current_head][1] = 60;  // Green
+	pixel_colors[current_head][2] = 0; // Blue
+
+	// 3. Push our software pixel array to the DMA hardware buffer
+	for (int i = 0; i < MAX_LED; i++) {
+		WS2812_Set_LED(i, pixel_colors[i][0], pixel_colors[i][1], pixel_colors[i][2]);
+	}
+
+	// 4. Move the head for the next frame
+	current_head += move_dir;
+
+	// 5. Wrap around the circle instead of bouncing
+	if (current_head >= MAX_LED) {
+		current_head = 0;           // Wrap from the end back to the start
+	} else if (current_head < 0) {
+		current_head = MAX_LED - 1; // Wrap from the start back to the end
+	}
+}
+
+void Draw_Dual_Looping_Comet(void) {
+	// Use static variables to track positions independently between frames.
+	// We start them on opposite sides of the ring.
+	static int head_1 = 0;
+	static int head_2 = MAX_LED / 2;
+
+	// 1. Fade all existing pixels slightly to create the "tails"
+	for (int i = 0; i < MAX_LED; i++) {
+		// Multiply by 3 and divide by 4 reduces brightness to 75%
+		pixel_colors[i][0] = (pixel_colors[i][0] * 3) / 4; // Red
+		pixel_colors[i][1] = (pixel_colors[i][1] * 3) / 4; // Green
+		pixel_colors[i][2] = (pixel_colors[i][2] * 3) / 4; // Blue
+	}
+
+	// 2. Draw the bright "heads" of the comets
+	// Comet 1: purple
+	pixel_colors[head_1][0] = 120; // Red
+	pixel_colors[head_1][1] = 20;  // Green
+	pixel_colors[head_1][2] = 255;   // Blue
+
+	// Comet 2: Green
+	pixel_colors[head_2][0] = 120; // Red
+	pixel_colors[head_2][1] = 20;  // Green
+	pixel_colors[head_2][2] = 255;   // Blue
+
+	// 3. Push our software pixel array to the DMA hardware buffer
+	for (int i = 0; i < MAX_LED; i++) {
+		WS2812_Set_LED(i, pixel_colors[i][0], pixel_colors[i][1], pixel_colors[i][2]);
+	}
+
+	// 4. Move the heads in opposite directions
+	head_1 += 1; // Moves forward
+	head_2 -= 1; // Moves backward
+
+	// 5. Wrap around the circle for both heads independently
+	if (head_1 >= MAX_LED) {
+		head_1 = 0;           // Wrap forward to the start
+	}
+
+	if (head_2 < 0) {
+		head_2 = MAX_LED - 1; // Wrap backward to the end
+	}
+}
+
+void Draw_Breathing_Effect(uint8_t base_r, uint8_t base_g, uint8_t base_b) {
+	// 1. Update the overall brightness level
+	current_brightness += fade_step;
+
+	// 2. Bounce the brightness between 0 and 255
+	if (current_brightness <= 20) {
+		current_brightness = 20;
+		fade_step = -fade_step; // Reverse direction to fade up
+	} else if (current_brightness >= 255) {
+		current_brightness = 255;
+		fade_step = -fade_step; // Reverse direction to fade down
+	}
+
+	// 3. Apply the scaled color to every LED
+	for (int i = 0; i < MAX_LED; i++) {
+		// Integer math for scaling: (Color * Brightness) / 255
+		// This calculates the percentage of the base color to display
+		uint8_t r = (base_r * current_brightness) / 255;
+		uint8_t g = (base_g * current_brightness) / 255;
+		uint8_t b = (base_b * current_brightness) / 255;
+
+		WS2812_Set_LED(i, r, g, b);
+	}
+}
+
+void Solid_Color(uint8_t base_r, uint8_t base_g, uint8_t base_b) {
+	//Apply the color to every LED
+	for (int i = 0; i < MAX_LED; i++) {
+		WS2812_Set_LED(i, base_r, base_g, base_b);
+	}
+}
+
+void Draw_Confetti(void) {
+	// 1. Fade existing pixels slowly to create a twinkling tail effect
+	for (int i = 0; i < MAX_LED; i++) {
+		// Multiply by 15 and divide by 16 retains ~93% brightness per frame.
+		// This makes the sparks linger a bit longer than the comet tail.
+		pixel_colors[i][0] = (pixel_colors[i][0] * 15) / 16;
+		pixel_colors[i][1] = (pixel_colors[i][1] * 15) / 16;
+		pixel_colors[i][2] = (pixel_colors[i][2] * 15) / 16;
+	}
+
+	// 2. Pick a random LED on your 118-LED loop
+	int random_led = rand() % MAX_LED;
+
+	// 3. Generate a random, highly saturated color
+	int color_pick = rand() % 6;  // Pick a base color phase
+	int mix = rand() % 256;       // Pick a random mixing value
+
+	uint8_t r = 0, g = 0, b = 0;
+
+	// This switch statement smoothly transitions between primary colors
+	switch (color_pick) {
+		case 0: r = 255; g = mix; b = 0;   break; // Red to Yellow
+		case 1: r = mix; g = 255; b = 0;   break; // Yellow to Green
+		case 2: r = 0; g = 255; b = mix;   break; // Green to Cyan
+		case 3: r = 0; g = mix; b = 255;   break; // Cyan to Blue
+		case 4: r = mix; g = 0; b = 255;   break; // Blue to Magenta
+		case 5: r = 255; g = 0; b = mix;   break; // Magenta to Red
+	}
+
+	// 4. Ignite the random LED with the new color
+	pixel_colors[random_led][0] = r;
+	pixel_colors[random_led][1] = g;
+	pixel_colors[random_led][2] = b;
+
+	// 5. Push our software pixel array to the DMA hardware buffer
+	for (int i = 0; i < MAX_LED; i++) {
+		WS2812_Set_LED(i, pixel_colors[i][0], pixel_colors[i][1], pixel_colors[i][2]);
+	}
+}
+
+// Converts a 0-255 Hue value into RGB combinations
+void Hue_to_RGB(uint8_t hue, uint8_t *r, uint8_t *g, uint8_t *b) {
+	hue = 255 - hue;
+	if (hue < 85) {
+		*r = 255 - hue * 3;
+		*g = 0;
+		*b = hue * 3;
+	} else if (hue < 170) {
+		hue -= 85;
+		*r = 0;
+		*g = hue * 3;
+		*b = 255 - hue * 3;
+	} else {
+		hue -= 170;
+		*r = hue * 3;
+		*g = 255 - hue * 3;
+		*b = 0;
+	}
+}
+
+void Draw_Rainbow_Wave(void) {
+	// Static variable to remember where the rainbow starts each frame
+	static uint16_t wave_position = 0;
+
+	uint8_t r, g, b;
+
+	// Loop through all 118 LEDs
+	for (int i = 0; i < MAX_LED; i++) {
+		// 1. Calculate the hue for this specific LED.
+		// (i * 255 / MAX_LED) spreads a full 0-255 color wheel exactly across your strip length.
+		uint8_t pixel_hue = (wave_position + (i * 255 / MAX_LED)) % 256;
+
+		// 2. Convert that hue into Red, Green, and Blue
+		Hue_to_RGB(pixel_hue, &r, &g, &b);
+
+		// 3. Push to hardware buffer
+		WS2812_Set_LED(i, r, g, b);
+	}
+
+	// 4. Advance the wave for the next frame.
+	// Change this from +1 to +2 or +3 to make the rainbow spin faster!
+	wave_position += 1;
+	if (wave_position > 255) {
+		wave_position = 0; // Reset to prevent integer overflow
+	}
+}
+
+
+void WS2812_Process_Mode(void) {
+	// 1. Detect if the mode has changed
+	if (current_led_mode != previous_led_mode) {
+		// Clear everything so the new mode starts with a clean slate
+		memset(dma_buffer, 0, sizeof(dma_buffer));
+		memset(pixel_colors, 0, sizeof(pixel_colors));
+		WS2812_Update(); // Send the "Off" command immediately
+
+		previous_led_mode = current_led_mode; // Acknowledge the change
+	}
+
+	// 2. Run the logic for the current mode
+	switch (current_led_mode) {
+	case 0:
+		// Mode 0 is "idle".
+		if (HAL_GetTick() - last_led_update >= 100) {
+			last_led_update = HAL_GetTick();
+			Solid_Color(0,0,0);
+			WS2812_Update();
+		}
+		break;
+
+	case 1:
+		// Mode 1: Listening
+		if (HAL_GetTick() - last_fade_update >= 20) {
+			last_fade_update = HAL_GetTick();
+			Draw_Breathing_Effect(20, 255, 20);
+			WS2812_Update();
+		}
+		break;
+
+	case 2:
+		// Mode 2: Thinking
+		if (HAL_GetTick() - last_fade_update >= 10) {
+			last_fade_update = HAL_GetTick();
+			Draw_Dual_Looping_Comet();
+			WS2812_Update();
+		}
+		break;
+
+	case 3:
+		// Mode 3: Speaking
+		if (HAL_GetTick() - last_fade_update >= 10) {
+			last_fade_update = HAL_GetTick();
+			Draw_Breathing_Effect(255, 98, 15);
+			WS2812_Update();
+		}
+		break;
+
+	case 4:
+		// Mode 4: Searching
+		if (HAL_GetTick() - last_fade_update >= 8) {
+			last_fade_update = HAL_GetTick();
+			Draw_Confetti();
+			WS2812_Update();
+		}
+		break;
+
+	case 5:
+		// Mode 5: Searching
+		if (HAL_GetTick() - last_fade_update >= 5) {
+			last_fade_update = HAL_GetTick();
+			Draw_Breathing_Effect(50, 0, 0);
+			WS2812_Update();
+		}
+		break;
+
+	case 64:
+		// Mode 64: Rainbow wave
+		if (HAL_GetTick() - last_led_update >= 4) {
+			last_led_update = HAL_GetTick();
+			Draw_Rainbow_Wave();
+			WS2812_Update();
+		}
+		break;
+
+	case 65:
+		// Mode 65: Confetti
+		if (HAL_GetTick() - last_led_update >= 8) {
+			last_led_update = HAL_GetTick();
+			Draw_Confetti();
+			WS2812_Update();
+		}
+		break;
+
+
+	case 66:
+		// Mode 66: Dual looping Comet
+		if (HAL_GetTick() - last_led_update >= 10) {
+			last_led_update = HAL_GetTick();
+			Draw_Dual_Looping_Comet();
+			WS2812_Update();
+		}
+		break;
+
+	case 67:
+		// Mode 67: looping Comet
+		if (HAL_GetTick() - last_led_update >= 5) {
+			last_led_update = HAL_GetTick();
+			Draw_Looping_Comet();
+			WS2812_Update();
+		}
+		break;
+
+	case 68:
+		// Mode 68: Bouncing Comet
+		if (HAL_GetTick() - last_led_update >= 5) {
+			last_led_update = HAL_GetTick();
+			Draw_Bouncing_Comet();
+			WS2812_Update();
+		}
+		break;
+
+	case 69:
+		// Mode 69: not ready
+		if (HAL_GetTick() - last_led_update >= 1) {
+			last_led_update = HAL_GetTick();
+			Draw_Breathing_Effect(20, 20, 20);
+			WS2812_Update();
+		}
+		break;
+
+	default:
+		// Safety catch: If a random value gets written to the variable, turn off.
+		current_led_mode = 0;
+		break;
+	}
+}
+
+/* USER CODE END 0 */
+
+/**
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void)
+{
+
+	/* USER CODE BEGIN 1 */
+
+	/* USER CODE END 1 */
+
+	/* MCU Configuration--------------------------------------------------------*/
+
+	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+	HAL_Init();
+
+	/* USER CODE BEGIN Init */
+
+	/* USER CODE END Init */
+
+	/* Configure the system clock */
+	SystemClock_Config();
+
+	/* USER CODE BEGIN SysInit */
+
+	/* USER CODE END SysInit */
+
+	/* Initialize all configured peripherals */
+	MX_GPIO_Init();
+	MX_DMA_Init();
+	MX_USART2_UART_Init();
+	MX_TIM1_Init();
+	MX_TIM2_Init();
+	MX_TIM3_Init();
+	MX_TIM4_Init();
+	MX_I2C3_Init();
+	MX_TIM15_Init();
+	MX_ADC1_Init();
+	MX_TIM16_Init();
+	/* USER CODE BEGIN 2 */
+
+	Motors_Init(); // Start these motors dih
+	IMU_Init(); // ts pmo sybau
+	HAL_ADC_Start(&hadc1);
+
+	// Initialize cmd timing so it starts "timed out" => ramps to 0 until first cmd arrives
+	last_cmd_ms = HAL_GetTick();
+
+	// Start UART RX in resync-friendly mode
+	UART_StartRx();
+
+	const uint32_t tick_period   = 1000U / CTRL_HZ; // 10 ms
+	const uint32_t odom_period   = 1000U / 50;      // 20 ms -> 50 Hz
+	//const uint32_t imu_period    = 1000U / 100;     // 10 ms  -> 100 Hz
+	const uint32_t battery_period    = 1000U / 10;     // 100 ms  -> 10 Hz
+
+	uint32_t currentTime;
+	uint32_t prevUpdateTime = 0;
+	uint32_t prevTXTime = 0;
+	//uint32_t prevIMUTime = 0;
+	uint32_t prevBatteryTime = 0;
+	uint32_t raw_adc = 0;
+	float pin_voltage = 0;
+	float Battery_Voltage = 0;
+
+	memset(dma_buffer, 0, sizeof(dma_buffer)); // sizeof() automatically handles the uint16_t math
+	memset(pixel_colors, 0, sizeof(pixel_colors));
+
+	/* USER CODE END 2 */
+
+	/* Infinite loop */
+	/* USER CODE BEGIN WHILE */
+	while (1)
+	{
+		/* USER CODE END WHILE */
+
+		/* USER CODE BEGIN 3 */
+
+		currentTime = HAL_GetTick();
+		UART_RxWatchdog();
+
+		// Control Loop
+		if( (currentTime - prevUpdateTime) >= tick_period){
+			Control_Update();
+			prevUpdateTime = currentTime;
+		}
+
+		// Odometry Loop
+		if( (currentTime - prevTXTime) >= odom_period){
+			TX_Odom();
+			prevTXTime = currentTime;
+		}
+
+		// Battery Info
+		if( (currentTime - prevBatteryTime) >= battery_period){
+			raw_adc = Read_ADC_Voltage();
+			pin_voltage = ((float)raw_adc * 3.3f) / 4095.0f;
+			float calibration_factor = 0.9848f;
+			Battery_Voltage = pin_voltage * ((100.0f + 22.0f) / 22.0f) * calibration_factor;
+			TX_Battery(Battery_Voltage);
+			prevBatteryTime = currentTime;
+		}
+
+		//IMU, maybe can be used one day
+		//if( (currentTime - prevIMUTime) >= imu_period){
+		//IMU_Data_t d = Read_IMU();   // consider bias removal here
+		//TX_Imu(&d);
+		//prevIMUTime = currentTime;
+		//}
+
+		WS2812_Process_Mode(); //LED control
+
+	}
+	/* USER CODE END 3 */
+}
+
+/**
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void)
+{
+	RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+	RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+	/** Configure the main internal regulator output voltage
+	 */
+	HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+	/** Initializes the RCC Oscillators according to the specified parameters
+	 * in the RCC_OscInitTypeDef structure.
+	 */
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+	RCC_OscInitStruct.HSIDiv = RCC_HSI_DIV1;
+	RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+	RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV1;
+	RCC_OscInitStruct.PLL.PLLN = 8;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+	RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
+	RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+	{
+		Error_Handler();
+	}
+
+	/** Initializes the CPU, AHB and APB buses clocks
+	 */
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+			|RCC_CLOCKTYPE_PCLK1;
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+
+	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+	{
+		Error_Handler();
+	}
+}
+
+/**
+ * @brief ADC1 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_ADC1_Init(void)
+{
+
+	/* USER CODE BEGIN ADC1_Init 0 */
+
+	/* USER CODE END ADC1_Init 0 */
+
+	ADC_ChannelConfTypeDef sConfig = {0};
+
+	/* USER CODE BEGIN ADC1_Init 1 */
+
+	/* USER CODE END ADC1_Init 1 */
+
+	/** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+	 */
+	hadc1.Instance = ADC1;
+	hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+	hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+	hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+	hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+	hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+	hadc1.Init.LowPowerAutoWait = DISABLE;
+	hadc1.Init.LowPowerAutoPowerOff = DISABLE;
+	hadc1.Init.ContinuousConvMode = DISABLE;
+	hadc1.Init.NbrOfConversion = 1;
+	hadc1.Init.DiscontinuousConvMode = DISABLE;
+	hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+	hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+	hadc1.Init.DMAContinuousRequests = DISABLE;
+	hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+	hadc1.Init.SamplingTimeCommon1 = ADC_SAMPLETIME_160CYCLES_5;
+	hadc1.Init.SamplingTimeCommon2 = ADC_SAMPLETIME_160CYCLES_5;
+	hadc1.Init.OversamplingMode = DISABLE;
+	hadc1.Init.TriggerFrequencyMode = ADC_TRIGGER_FREQ_HIGH;
+	if (HAL_ADC_Init(&hadc1) != HAL_OK)
+	{
+		Error_Handler();
+	}
+
+	/** Configure Regular Channel
+	 */
+	sConfig.Channel = ADC_CHANNEL_4;
+	sConfig.Rank = ADC_REGULAR_RANK_1;
+	sConfig.SamplingTime = ADC_SAMPLINGTIME_COMMON_1;
+	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN ADC1_Init 2 */
+
+	/* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+ * @brief I2C3 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_I2C3_Init(void)
+{
+
+	/* USER CODE BEGIN I2C3_Init 0 */
+
+	/* USER CODE END I2C3_Init 0 */
+
+	/* USER CODE BEGIN I2C3_Init 1 */
+
+	/* USER CODE END I2C3_Init 1 */
+	hi2c3.Instance = I2C3;
+	hi2c3.Init.Timing = 0x10B17DB5;
+	hi2c3.Init.OwnAddress1 = 0;
+	hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+	hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+	hi2c3.Init.OwnAddress2 = 0;
+	hi2c3.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+	hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+	hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+	if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+	{
+		Error_Handler();
+	}
+
+	/** Configure Analogue filter
+	 */
+	if (HAL_I2CEx_ConfigAnalogFilter(&hi2c3, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+	{
+		Error_Handler();
+	}
+
+	/** Configure Digital filter
+	 */
+	if (HAL_I2CEx_ConfigDigitalFilter(&hi2c3, 0) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN I2C3_Init 2 */
+
+	/* USER CODE END I2C3_Init 2 */
+
+}
+
+/**
+ * @brief TIM1 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM1_Init(void)
+{
+
+	/* USER CODE BEGIN TIM1_Init 0 */
+
+	/* USER CODE END TIM1_Init 0 */
+
+	TIM_Encoder_InitTypeDef sConfig = {0};
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+	/* USER CODE BEGIN TIM1_Init 1 */
+
+	/* USER CODE END TIM1_Init 1 */
+	htim1.Instance = TIM1;
+	htim1.Init.Prescaler = 0;
+	htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim1.Init.Period = 65535;
+	htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim1.Init.RepetitionCounter = 0;
+	htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+	sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+	sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+	sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+	sConfig.IC1Filter = 15;
+	sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+	sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+	sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+	sConfig.IC2Filter = 15;
+	if (HAL_TIM_Encoder_Init(&htim1, &sConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM1_Init 2 */
+
+	/* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
+ * @brief TIM2 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM2_Init(void)
+{
+
+	/* USER CODE BEGIN TIM2_Init 0 */
+
+	/* USER CODE END TIM2_Init 0 */
+
+	TIM_Encoder_InitTypeDef sConfig = {0};
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+	/* USER CODE BEGIN TIM2_Init 1 */
+
+	/* USER CODE END TIM2_Init 1 */
+	htim2.Instance = TIM2;
+	htim2.Init.Prescaler = 0;
+	htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim2.Init.Period = 65535;
+	htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+	sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+	sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+	sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+	sConfig.IC1Filter = 15;
+	sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+	sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+	sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+	sConfig.IC2Filter = 15;
+	if (HAL_TIM_Encoder_Init(&htim2, &sConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM2_Init 2 */
+
+	/* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+ * @brief TIM3 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM3_Init(void)
+{
+
+	/* USER CODE BEGIN TIM3_Init 0 */
+
+	/* USER CODE END TIM3_Init 0 */
+
+	TIM_Encoder_InitTypeDef sConfig = {0};
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+	/* USER CODE BEGIN TIM3_Init 1 */
+
+	/* USER CODE END TIM3_Init 1 */
+	htim3.Instance = TIM3;
+	htim3.Init.Prescaler = 0;
+	htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim3.Init.Period = 65535;
+	htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+	sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+	sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+	sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+	sConfig.IC1Filter = 15;
+	sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+	sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+	sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+	sConfig.IC2Filter = 15;
+	if (HAL_TIM_Encoder_Init(&htim3, &sConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM3_Init 2 */
+
+	/* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
+ * @brief TIM4 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM4_Init(void)
+{
+
+	/* USER CODE BEGIN TIM4_Init 0 */
+
+	/* USER CODE END TIM4_Init 0 */
+
+	TIM_Encoder_InitTypeDef sConfig = {0};
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+	/* USER CODE BEGIN TIM4_Init 1 */
+
+	/* USER CODE END TIM4_Init 1 */
+	htim4.Instance = TIM4;
+	htim4.Init.Prescaler = 0;
+	htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim4.Init.Period = 65535;
+	htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+	sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+	sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+	sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+	sConfig.IC1Filter = 15;
+	sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+	sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+	sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+	sConfig.IC2Filter = 15;
+	if (HAL_TIM_Encoder_Init(&htim4, &sConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM4_Init 2 */
+
+	/* USER CODE END TIM4_Init 2 */
+
+}
+
+/**
+ * @brief TIM15 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM15_Init(void)
+{
+
+	/* USER CODE BEGIN TIM15_Init 0 */
+
+	/* USER CODE END TIM15_Init 0 */
+
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+	TIM_OC_InitTypeDef sConfigOC = {0};
+	TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+	/* USER CODE BEGIN TIM15_Init 1 */
+
+	/* USER CODE END TIM15_Init 1 */
+	htim15.Instance = TIM15;
+	htim15.Init.Prescaler = 63;
+	htim15.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim15.Init.Period = 19999;
+	htim15.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim15.Init.RepetitionCounter = 0;
+	htim15.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_PWM_Init(&htim15) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim15, &sMasterConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 0;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+	sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+	if (HAL_TIM_PWM_ConfigChannel(&htim15, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	if (HAL_TIM_PWM_ConfigChannel(&htim15, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+	sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+	sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+	sBreakDeadTimeConfig.DeadTime = 0;
+	sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+	sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+	sBreakDeadTimeConfig.BreakFilter = 0;
+	sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+	if (HAL_TIMEx_ConfigBreakDeadTime(&htim15, &sBreakDeadTimeConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM15_Init 2 */
+
+	/* USER CODE END TIM15_Init 2 */
+	HAL_TIM_MspPostInit(&htim15);
+
+}
+
+/**
+ * @brief TIM16 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM16_Init(void)
+{
+
+	/* USER CODE BEGIN TIM16_Init 0 */
+
+	/* USER CODE END TIM16_Init 0 */
+
+	TIM_OC_InitTypeDef sConfigOC = {0};
+	TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+	/* USER CODE BEGIN TIM16_Init 1 */
+
+	/* USER CODE END TIM16_Init 1 */
+	htim16.Instance = TIM16;
+	htim16.Init.Prescaler = 0;
+	htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim16.Init.Period = 79;
+	htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim16.Init.RepetitionCounter = 0;
+	htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_Base_Init(&htim16) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	if (HAL_TIM_PWM_Init(&htim16) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 0;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+	sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+	if (HAL_TIM_PWM_ConfigChannel(&htim16, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+	sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+	sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+	sBreakDeadTimeConfig.DeadTime = 0;
+	sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+	sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+	sBreakDeadTimeConfig.BreakFilter = 0;
+	sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+	if (HAL_TIMEx_ConfigBreakDeadTime(&htim16, &sBreakDeadTimeConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM16_Init 2 */
+
+	/* USER CODE END TIM16_Init 2 */
+	HAL_TIM_MspPostInit(&htim16);
+
+}
+
+/**
+ * @brief USART2 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_USART2_UART_Init(void)
+{
+
+	/* USER CODE BEGIN USART2_Init 0 */
+
+	/* USER CODE END USART2_Init 0 */
+
+	/* USER CODE BEGIN USART2_Init 1 */
+
+	/* USER CODE END USART2_Init 1 */
+	huart2.Instance = USART2;
+	huart2.Init.BaudRate = 115200;
+	huart2.Init.WordLength = UART_WORDLENGTH_8B;
+	huart2.Init.StopBits = UART_STOPBITS_1;
+	huart2.Init.Parity = UART_PARITY_NONE;
+	huart2.Init.Mode = UART_MODE_TX_RX;
+	huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+	huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+	huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+	huart2.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+	huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+	if (HAL_UART_Init(&huart2) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	if (HAL_UARTEx_SetTxFifoThreshold(&huart2, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	if (HAL_UARTEx_SetRxFifoThreshold(&huart2, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	if (HAL_UARTEx_DisableFifoMode(&huart2) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN USART2_Init 2 */
+
+	/* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+ * Enable DMA controller clock
+ */
+static void MX_DMA_Init(void)
+{
+
+	/* DMA controller clock enable */
+	__HAL_RCC_DMA1_CLK_ENABLE();
+
+	/* DMA interrupt init */
+	/* DMA1_Channel1_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+
+}
+
+/**
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_GPIO_Init(void)
+{
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+	/* USER CODE BEGIN MX_GPIO_Init_1 */
+
+	/* USER CODE END MX_GPIO_Init_1 */
+
+	/* GPIO Ports Clock Enable */
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	__HAL_RCC_GPIOF_CLK_ENABLE();
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOD_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+
+	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
+
+	/*Configure GPIO pin : B1_Pin */
+	GPIO_InitStruct.Pin = B1_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : LED_GREEN_Pin */
+	GPIO_InitStruct.Pin = LED_GREEN_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+	HAL_GPIO_Init(LED_GREEN_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : Debug_Mode_Pin */
+	GPIO_InitStruct.Pin = Debug_Mode_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+	HAL_GPIO_Init(Debug_Mode_GPIO_Port, &GPIO_InitStruct);
+
+	/* USER CODE BEGIN MX_GPIO_Init_2 */
+
+	/* USER CODE END MX_GPIO_Init_2 */
+}
+
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
+/**
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void)
+{
+	/* USER CODE BEGIN Error_Handler_Debug */
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1)
+	{
+		HAL_Delay(800);
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+	}
+	/* USER CODE END Error_Handler_Debug */
+}
+#ifdef USE_FULL_ASSERT
+/**
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+	/* USER CODE BEGIN 6 */
+	/* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+	/* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
