@@ -7,6 +7,7 @@ from pypdf import PdfReader
 import tiktoken
 from django.conf import settings
 from django.db import transaction
+from django.contrib.postgres.search import SearchVector
 
 from .models import Source, Chunk
 from .embedders import get_embedder
@@ -119,6 +120,10 @@ def ingest_source(source_id: int) -> None:
                     )
                 )
             Chunk.objects.bulk_create(bulk, batch_size=200)
+            # bulk_create bypasses save(), so search_vector must be set manually
+            Chunk.objects.filter(source=src).update(
+                search_vector=SearchVector("search_text", config="english")
+            )
             src.status = Source.STATUS_READY
             src.last_error = ""
             src.save(update_fields=["status", "last_error"])

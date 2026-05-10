@@ -1,6 +1,7 @@
 from django.db import models
 from pgvector.django import VectorField
 from django.contrib.postgres.search import SearchVectorField
+from django.contrib.postgres.indexes import GinIndex
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 import os
@@ -57,6 +58,7 @@ class Chunk(models.Model):
         unique_together = [("source", "chunk_index")]
         indexes = [
             models.Index(fields=["source"]),
+            GinIndex(fields=["search_vector"], name="chunk_search_vector_gin"),
         ]
     def __str__(self):
         return f"Chunk {self.source_id}:{self.chunk_index}"

@@ -9,6 +9,8 @@ from .models import Chunk, EmailRecipient
 from .embedders import get_embedder
 import json
 
+_embedder = get_embedder()
+
 
 @require_GET
 def search(request):
@@ -19,8 +21,7 @@ def search(request):
     if not q:
         return JsonResponse({"results": []})
 
-    embedder = get_embedder()
-    q_emb = embedder.embed_query(q)
+    q_emb = _embedder.embed_query(q)
 
     # Retrieve more candidates than final k
     candidate_k = max(10, k * 3)
@@ -43,8 +44,9 @@ def search(request):
             "keyword_score": 0.0,
         })
 
-    # Keyword search
-    search_query = SearchQuery(q)
+    # Keyword search — websearch type handles natural-language queries (OR logic,
+    # quoted phrases, negation) rather than requiring every word to match.
+    search_query = SearchQuery(q, search_type="websearch")
     keyword_qs = (
         Chunk.objects
         .filter(source__enabled=True)
@@ -63,20 +65,26 @@ def search(request):
             "keyword_score": float(ch.rank),
         })
 
+    # Normalize scores to [0, 1] before combining so the 70/30 weighting is
+    # meaningful — raw SearchRank values (0.01–0.05) are orders of magnitude
+    # smaller than cosine similarity values (0.5–0.9) and would be swamped.
+    max_vec = max((r["vector_score"] for r in vector_results), default=1.0) or 1.0
+    max_kw  = max((r["keyword_score"] for r in keyword_results), default=1.0) or 1.0
+    for r in vector_results:
+        r["vector_score"] /= max_vec
+    for r in keyword_results:
+        r["keyword_score"] /= max_kw
+
     # Merge by chunk id
     merged = {}
-
     for r in vector_results:
         merged[r["id"]] = r
-
     for r in keyword_results:
         if r["id"] in merged:
             merged[r["id"]]["keyword_score"] = r["keyword_score"]
         else:
             merged[r["id"]] = r
 
-    # Simple combined score
-    # You can tune these weights later
     combined = []
     for r in merged.values():
         score = 0.7 * r["vector_score"] + 0.3 * r["keyword_score"]
