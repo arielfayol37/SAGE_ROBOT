@@ -166,6 +166,12 @@ class SageApp:
             self._messages.append({"role": "user", "content": text})
             if len(self._messages) > max_history:
                 self._messages[:] = self._messages[-max_history:]
+                # Naive slice can split a tool-call/tool-result pair, leaving
+                # an orphaned 'tool' (or 'assistant'+tool_calls) at index 0,
+                # which OpenAI rejects. Drop from the front until we reach a
+                # user turn, which is always a safe starting point.
+                while self._messages and self._messages[0]["role"] != "user":
+                    self._messages.pop(0)
             _log.debug("Message history length: %d", len(self._messages))
 
         with self._llm_lock:
