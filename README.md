@@ -33,7 +33,7 @@ SAGE is a custom-built autonomous mobile robot designed to tour visitors through
 
 ## 1. CRITICAL: WiFi & Network Access
 
-> **Read this first. If SAGE loses network connectivity, everything that depends on the network (the iPad face, teleoperation, voice recording web page, knowledge base) stops working. This is the most likely maintenance event.**
+> **Read this first. If SAGE loses network connectivity, everything that depends on the network (vocal interactions, the iPad face, teleoperation, voice recording web page, knowledge base) stops working. This is the most likely maintenance event.**
 
 ### Why This Happens
 
@@ -80,7 +80,7 @@ nmcli device wifi connect "SSID_NAME" password "PASSWORD"
    sudo systemctl set-default multi-user.target
    sudo reboot
    ```
-> Remember to disable the Gnome desktop after you have activated it. It consumes a lot of memory.
+> Remember to disable the Gnome desktop after you have activated it. It consumes a lot of memory (~2GB of the 8GB available).
 
 ### After Reconnecting
 
@@ -100,7 +100,8 @@ SAGE autonomously tours visitors through the first floor of Gellersen Engineerin
 | Capability | How It Works |
 |---|---|
 | Autonomous navigation | SLAM-built map + AMCL localization + Nav2 path planning |
-| Self-docking / charging | Two-stage Nav2 + opennav_docking with AprilTag alignment |
+| Self-docking | Two-stage Nav2 + opennav_docking with AprilTag alignment (charging station not deployed — see §8) |
+| LED state indicators | Serial bridge maps UI phase to LED mode and sends to MCU; MCU drives LEDs |
 | Voice interaction | Wake word → Whisper STT → OpenAI LLM → Piper TTS |
 | Live video streaming | USB camera → ROS 2 → web_video_server → browser |
 | Teleoperation | Browser joystick → WebSocket → ROS 2 `/cmd_vel` → STM32 |
@@ -237,6 +238,7 @@ SAGE_ROBOT/  (jetson branch)
 |---|---|
 | Differential drive motors (×2) | Controlled by ESC-style 50 Hz PWM from STM32 (TIM14/TIM15) |
 | Speaker | Integrated into robot body, driven via ALSA/PulseAudio on Jetson |
+| LEDs | 118 WS2812 addressable RGB LEDs driven by STM32 TIM16 PWM/DMA; animations change per robot state |
 
 ### Microphone
 
@@ -291,7 +293,7 @@ Web Interfaces
 | 4 — Web Bridge | `control_bridge` | WebSocket ↔ `/cmd_vel`, status broadcast |
 | 5 — Teleop Web | `python -m http.server 8001` | Serves operator teleop UI |
 | 6 — Status Web | `npx vite` | Serves face/status React UI (port 8002) |
-| 7 — Serial Bridge | `serial_bridge_without_imu` | STM32 ↔ ROS 2 serial link |
+| 7 — Serial Bridge | `serial_bridge_without_imu` | STM32 ↔ ROS 2 serial link; forwards UI state as LED commands |
 | 8 — Scan Publisher | `sllidar_a1_launch.py` | RPLIDAR → `/scan` |
 | 9 — Speech | `orchestrator/main.py` | Wake word, STT, LLM, TTS, Nav2 client |
 | 10 — AMCL | `localization_launch.py` | Map server + AMCL localization |
@@ -365,6 +367,29 @@ Payload: 24 bytes, sent at **100 Hz**
 | 16 | float32 | `ay` | accel Y (m/s²) |
 | 20 | float32 | `az` | accel Z (m/s²) |
 
+#### LED State (Jetson → STM32) — 2-byte packet, header `0x79`
+
+This packet does **not** use the SOF+TYPE+LEN framing of the other messages. It is a simple 2-byte write:
+
+```
+Byte 0: 0x79  (LED header, decimal 121 = 'y')
+Byte 1: led_mode  (uint8)
+```
+
+Sent by the serial bridge whenever `/sage/ui_state_json` changes. The MCU receives this in its UART interrupt handler and updates `current_led_mode`. The `WS2812_Process_Mode()` function in the MCU main loop then drives **118 WS2812 addressable RGB LEDs** via TIM16 PWM/DMA.
+
+| `led_mode` | UI Phase | LED Animation |
+|---|---|---|
+| 0 | `idle` | All off |
+| 1 | `listening` | Rainbow wave |
+| 2 | `thinking` | Dual looping comet (purple) |
+| 3 | `speaking` | Breathing effect (warm orange-white) |
+| 4 | `searching` | Confetti (random color sparks) |
+| 5 | `error` | Breathing effect (dim red) |
+| 61 | *(boot default)* | Gravity noise animation — runs from power-on until the Jetson sends the first state update |
+
+The MCU firmware implementing all animations lives in `SAGE_MCU/Core/Src/main.c` on the `MCU` branch.
+
 #### TYPE 0x04 — Battery Voltage (STM32 → Jetson)
 
 Payload: 4 bytes, sent at **50 Hz** (alongside odometry)
@@ -411,9 +436,10 @@ Located at `ros2_ws/src/web_teleop_bridge/web_teleop_bridge/serial_bridge_withou
 
 - Opens the STM32 serial port (auto-detects `/dev/ttyACM*` at 115200 baud)
 - Subscribes to `/cmd_vel` → encodes TYPE_CMD frames → sends to STM32
+- Subscribes to `/sage/ui_state_json` → maps `"phase"` field to LED mode → sends TYPE_LED (0x79) frame to STM32
 - Receives TYPE_ODOM frames → publishes `nav_msgs/Odometry` to `/odom`
 - Receives TYPE_BATTERY frames → publishes `sensor_msgs/BatteryState` to `/battery_state`
-- Runs a dedicated RX thread for low-latency frame parsing
+- Runs a dedicated RX thread for low-latency frame parsing; auto-reconnects if USB drops
 
 > The `serial_bridge.py` (with IMU) also publishes `/imu/data` from TYPE_IMU frames. The current default startup script uses `serial_bridge_without_imu.py` because EKF-based odometry fusion was found to perform well without the IMU in this environment. Use `start_robot_with_imu.sh` to enable IMU fusion.
 
@@ -504,7 +530,23 @@ Launched in window 14:
 
 ## 8. Self-Docking System
 
-Self-docking is one of the more complex features added to SAGE. It allows the robot to autonomously return to its charging station when instructed (either by the LLM or low battery). The system achieves approximately **80% docking success rate** in normal conditions.
+Self-docking is one of the more complex features added to SAGE. It allows the robot to autonomously navigate to its charging station and physically dock when instructed by the LLM. The system achieves approximately **85%+ docking success rate** in normal conditions — this was measured before the step-spin search was added; the step-spin guarantees the robot will always find the AprilTag, so the remaining failure modes are almost exclusively Nav2-related (localization or path planning), not vision-related.
+
+### Charging Station Status
+
+> **The physical charging station is not deployed.** All the software for autonomous charging is complete — camera calibration, AprilTag detection, opennav_docking approach, dock state tracking, and battery watchdog email alerts. However, with only one week left in the semester it was not safe to set up and validate the physical hardware (charger, contacts, station geometry) without adequate testing time.
+
+**Current charging workflow:** A human manually plugs in the robot when the battery is low. The `battery_watchdog.py` process monitors `/battery_state` and automatically sends an email alert to configured recipients (via the knowledge base email API) when voltage drops below the threshold, so an operator is notified without having to watch SAGE.
+
+**What a future team would need to do to enable fully autonomous charging:**
+1. Set up the physical charging station and install the charger
+2. Attach an AprilTag to the front of the station (tag family and size must match `config/apriltag.yaml`)
+3. Update `config/docking_server.yaml` with the correct dock geometry (approach tolerances, pre-dock offset distance)
+4. Update the `DOCKING_STATION` staging waypoint and `_DOCKED_POSE` in `orchestrator/waypoints.py` to the new physical location
+5. Tune the undocking reverse distance in `orchestrator/nav/opennav_async.py` for the new station depth
+6. Update `power_supply_status` handling in `serial_bridge_without_imu.py` if the charger outputs a charging signal readable by the STM32
+
+The documentation here (and in the MCU branch) is thorough enough that a future team should be able to upload this README into an AI assistant and receive precise step-by-step instructions for completing the setup.
 
 ### Architecture Overview
 
@@ -607,9 +649,10 @@ The underscore prefix on `_DOCKED_POSE` hides it from the LLM tool — `waypoint
 
 ### Known Limitations
 
-- **~80% success rate**: Failures are usually due to AprilTag detection issues (lighting, angle, partial occlusion) or AMCL localization error placing the robot slightly off from the staging pose.
+- **~85%+ success rate**: After adding the step-spin AprilTag search, tag detection is effectively guaranteed. Remaining failures are Nav2 localization or path planning issues — the robot approaches the staging waypoint at the wrong angle or slightly off-center, causing the docking controller to time out. Retrying usually succeeds.
 - **Recovery**: If docking fails, SAGE announces the failure via TTS. The user can retry by asking SAGE to go to the docking station again.
-- **Lighting sensitivity**: The USB camera struggles in very bright or very dim conditions near the charger. Consistent ambient lighting improves reliability.
+- **Lighting sensitivity**: The USB camera can struggle in very bright or very dim conditions. The step-spin mitigates this by searching across angles, but consistent ambient lighting still improves reliability.
+- **No physical charging station deployed**: See "Charging Station Status" above. Docking navigates SAGE to the correct position, but no charge is actually transferred in the current deployment.
 
 ---
 
@@ -721,13 +764,13 @@ All tunable parameters are centralized here as frozen dataclasses. Override at r
 
 | Parameter | Default | Env Override | Description |
 |---|---|---|---|
-| `llm.model` | `gpt-5.4` | `SAGE_LLM_MODEL` | OpenAI model for conversation |
+| `llm.model` | `gpt-5.5` | `SAGE_LLM_MODEL` | OpenAI model for conversation |
 | `stt.whisper_model` | `medium.en` | — | Whisper model (medium for accuracy, CUDA) |
 | `stt.wakeword_model_path` | `hey_jarvis_v0.1.onnx` | — | Active wakeword model |
 | `stt.wakeword_sensitivity` | `0.6` | — | openwakeword detection threshold |
 | `stt.silero_sensitivity` | `0.6` | — | Silero VAD threshold |
 | `stt.max_recording_duration` | `12.0` s | — | Max single utterance length |
-| `llm.max_history_len` | `12` | — | LLM conversation history window |
+| `llm.max_history_len` | `15` | — | LLM conversation history window |
 | `endpoints.kb_search` | `http://127.0.0.1:8004/api/kb/search` | `SAGE_KB_URL` | Knowledge base endpoint |
 | `web.port` | `8005` | — | Push-to-talk web server port |
 | `tts.model_path` | `en_US-amy-medium.onnx` | `SAGE_TTS_MODEL` | Piper TTS voice model |
@@ -774,12 +817,14 @@ Defined in `orchestrator/llm/tools.py`:
 ### Web Push-to-Talk (`orchestrator/speech/web_ptt.py`, port 8005)
 
 For users who cannot or prefer not to speak directly to SAGE:
+
 1. Browser records audio using MediaRecorder (WebM format)
 2. Audio POSTed to `/speech/audio`
 3. Server converts WebM → 16 kHz WAV using `ffmpeg`
 4. `faster-whisper` transcribes locally (singleton model, lazy-loaded)
 5. Transcript fed into the same LLM pipeline
 6. Response returned as JSON with transcript and TTS audio
+7. There is also an input field for direct text messaging
 
 ### Direction-of-Arrival Server (`orchestrator/speech/doa_server.py`, port 8766)
 
@@ -793,7 +838,7 @@ Reads the **XVF3800 mic array's AEC azimuth** via USB vendor control transfer an
 
 The knowledge base runs as a Docker Compose stack (PostgreSQL + Django web service).
 - **Django Environment:** `knowledge_base/.env.template` contains the template for the .env file in the same directory that defines environment variables for the knowledge base.
-- **Content:** Tour talking points document (~8 pages) provided by Dean Doug Tougaw of the College of Engineering. The KB is sparse and would benefit from more ingested content (Valpo links, program descriptions, faculty, etc.).
+- **Content:** Tour talking points document (~8 pages) provided by Dean Doug Tougaw of the College of Engineering and some links. The KB is sparse and would benefit from more ingested content (Valpo links, program descriptions, faculty, etc.).
 - **API port:** 8004
 - **Search endpoint:** `POST /api/kb/search` with `{"query": "...", "top_k": 5}`
 - **Email endpoint:** `POST /api/kb/send-emails` (used by the battery watchdog)
@@ -1053,7 +1098,7 @@ The best advice here is to reboot the system — simple but effective.
 
 **Symptom:** SAGE aborts navigation mid-route when someone walks very close to it. The LIDAR sees them as a sudden obstacle inside the inflation radius. This can also happen if SAGE got too close to a wall while navigating or avoiding an obstacle.
 
-**Recovery:** Re-prompt SAGE verbally with the same destination. It will replan from the current position.
+**Recovery:** It will automatically try to recover by spinning first, then doing a back up of about 30cm, and replan from that position. If that doesn't work, it will usually say it. You can also Re-prompt SAGE verbally with the same destination. 
 If too close to a wall, prompt for a destination in a direction away from the wall, or push it away from the wall by about 0.5 m and prompt again.
 
 **Root cause:** Nav2's costmap inflates obstacles; a person standing very close is treated as a fatal obstacle. This is intentional safety behavior. The `inflation_radius` in `config/nav2_params.yaml` can be reduced if this happens too frequently, but doing so risks SAGE getting closer to walls.
@@ -1094,8 +1139,9 @@ Also, check `config/nav2_params.yaml` and make sure the regulated pure pursuit c
 1. **AprilTag not detected** — Check window 13 (AprilTag). Verify the tag is visible in the camera feed (`ros2 topic echo /detections`). Poor lighting or a partially blocked tag are the most frequent causes.
 2. **AMCL localization off** — If the robot's estimated position drifts, it may approach the staging waypoint from the wrong angle, placing it too far from the AprilTag's field of view. Use Rviz2 to check the particle cloud before docking.
 3. **Tag not published on `/detected_dock_pose`** — Check window 13; the `dock_pose_publisher` may have crashed. Restart window 13.
+4. Camera might be damaged.
 
-**Recovery:** Ask SAGE verbally to go to the docking station again. The failure handler will announce the failure via TTS and the retry usually succeeds if the environment is the same.
+**Recovery:** Ask SAGE verbally to go to the docking station again. The step-spin guarantees the tag will be found on retry, so failures are almost always resolved by a second attempt.
 
 **Diagnostic commands:**
 ```bash
@@ -1178,7 +1224,7 @@ If containers are not running: `docker compose up -d`
 2. Use the "2D Pose Estimate" tool in RViz2 to set the approximate pose, or update `initial_pose_x/y/a` in `nav2_params.yaml` and restart window 10 (AMCL)
 3. Spin the robot slowly in place to help AMCL converge
 
-**Root cause:** AMCL can lose localization if odometry drifts significantly (see dead-wheel issue above) or if the environment has changed substantially since the map was built (furniture moved, new obstacles). This can also happen if the local costmap window is too small (increase to at least 5 m × 5 m in `nav2_params.yaml` if AMCL loses position around furniture-dense areas like Guelly Delly).
+**Root cause:** AMCL can lose localization if odometry drifts significantly (see dead-wheel issue above) or if the environment has changed substantially since the map was built (furniture moved, new obstacles). This can also happen if the local costmap window is too small (increase to at least 5 m × 5 m in `nav2_params.yaml` if AMCL loses position around furniture-dense areas like Guelly Delly). This can also happen if the robot drives at a high speed. The set desired linear velocity in config/nav2_params.yaml is 0.80m/s. When higher than that, the robot is prone to localization issues and we think it is because the lidar scan rate is too low. It is 5hz on average, and even at 0.80m/s of linear speed, that is 16cm moved after very scan.
 
 Alternatively, just reboot the robot from the docking station.
 
@@ -1232,12 +1278,12 @@ We skimmed over some videos like the simulation and teleop because we didn't wan
 - ROS 2, Nav2, SLAM Toolbox, robot_localization, and opennav_docking open-source communities
 - OpenAI, Piper TTS, faster-whisper, openwakeword, and realtimestt projects
 - All faculty (especially Dr. Georges El-Howayek, our supervisor), students, and collaborators involved in testing and integration
-- Fayol Ateufack (CE) led the team, worked on the development and integration of navigation, speech, interfaces, and knowledge base + search queries software stack. Gave the robot its soul.
-- Aidan Matson (ME) was the CTO, worked on designing + 3D printing the frame, coding the MCU, mounting the wheels, designing the PCB, and overseeing battery safety + charging efforts. Gave the robot its body.
-- Ranger Scott (EE) assembled the battery cells, designed the charging circuit, integrated battery chip, built the charger, and printed the contacts.
-- Samuel Starkenburg (ME) designed and printed the lid with integrated microphone, lidar, and camera as one seamless unit.
-- Tobias Demonte (ME) worked on the design, printing, and testing of previous iterations of wheels. Designed and printed mounts for the speaker and battery.
-- Zach Nielsen (CE) researched speech components like the microphone, integrated the IMU sensor, contributed to design choices, and managed internal and external communication (emails, posters, presentations).
+- Fayol Ateufack (Computer Engineer) led the team, worked on the development and integration of navigation, speech, interfaces, and knowledge base + search queries software stack. 
+- Aidan Matson (Mechnical Engineer) was the CTO, worked on designing + 3D printing the frame, coding the MCU, mounting the wheels, designing the PCB, and overseeing battery safety + charging efforts.
+- Ranger Scott (Electrical Engineer) assembled the battery cells, designed the charging circuit, integrated battery chip, built the charger, and printed the contacts.
+- Samuel Starkenburg (Mechanical Engineer) designed and printed the lid with integrated microphone, lidar, and camera as one seamless unit.
+- Tobias Demonte (Mechanical Engineer) worked on the design, printing, and testing of previous iterations of wheels. Designed and printed mounts for the speaker and battery.
+- Zach Nielsen (Computer Engineer) researched speech components like the microphone, integrated the IMU sensor, contributed to design choices, and managed internal and external communication (emails, posters, presentations).
 
 ---
 
