@@ -35,14 +35,7 @@ def search(request):
         .order_by("distance")[:candidate_k]
     )
 
-    vector_results = []
-    for ch in vector_qs:
-        vector_results.append({
-            "id": ch.id,
-            "chunk": ch,
-            "vector_score": 1.0 - float(ch.distance),  # rough similarity
-            "keyword_score": 0.0,
-        })
+    vector_chunks = list(vector_qs)
 
     # Keyword search — websearch type handles natural-language queries (OR logic,
     # quoted phrases, negation) rather than requiring every word to match.
@@ -55,43 +48,23 @@ def search(request):
         .filter(rank__gt=0.0)
         .order_by("-rank")[:candidate_k]
     )
+    keyword_chunks = list(keyword_qs)
 
-    keyword_results = []
-    for ch in keyword_qs:
-        keyword_results.append({
-            "id": ch.id,
-            "chunk": ch,
-            "vector_score": 0.0,
-            "keyword_score": float(ch.rank),
-        })
+    # Reciprocal Rank Fusion: score = sum of 1/(60 + rank) across lists.
+    # Rank position matters, not raw score magnitude — so a name that lands #1
+    # in keyword search competes fairly with a #1 vector hit.
+    RRF_K = 60
+    rrf: dict[int, dict] = {}
+    for rank, ch in enumerate(vector_chunks):
+        rrf.setdefault(ch.id, {"chunk": ch, "score": 0.0})
+        rrf[ch.id]["score"] += 1.0 / (RRF_K + rank)
+    for rank, ch in enumerate(keyword_chunks):
+        rrf.setdefault(ch.id, {"chunk": ch, "score": 0.0})
+        rrf[ch.id]["score"] += 1.0 / (RRF_K + rank)
 
-    # Normalize scores to [0, 1] before combining so the 70/30 weighting is
-    # meaningful — raw SearchRank values (0.01–0.05) are orders of magnitude
-    # smaller than cosine similarity values (0.5–0.9) and would be swamped.
-    max_vec = max((r["vector_score"] for r in vector_results), default=1.0) or 1.0
-    max_kw  = max((r["keyword_score"] for r in keyword_results), default=1.0) or 1.0
-    for r in vector_results:
-        r["vector_score"] /= max_vec
-    for r in keyword_results:
-        r["keyword_score"] /= max_kw
+    combined = sorted(rrf.values(), key=lambda r: r["score"], reverse=True)
 
-    # Merge by chunk id
-    merged = {}
-    for r in vector_results:
-        merged[r["id"]] = r
-    for r in keyword_results:
-        if r["id"] in merged:
-            merged[r["id"]]["keyword_score"] = r["keyword_score"]
-        else:
-            merged[r["id"]] = r
-
-    combined = []
-    for r in merged.values():
-        score = 0.7 * r["vector_score"] + 0.3 * r["keyword_score"]
-        combined.append((score, r["chunk"]))
-
-    combined.sort(key=lambda x: x[0], reverse=True)
-    top_chunks = [ch for _, ch in combined[:k]]
+    top_chunks = [r["chunk"] for r in combined[:k]]
 
     results = []
     for ch in top_chunks:
