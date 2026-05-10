@@ -57,17 +57,17 @@ class STTConfig:
     ready_chime_path:     str  = "assets/audio/ui-wakesound.wav"
     wake_word_activation_delay: float = 3.0  # follow-up window after each reply
     say_chime:            bool = False
-    wake_word_timeout:    float = 7
+    wake_word_timeout:    float = 8
 # ---------------------------------------------------------------------------
 # LLM
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True, slots=True)
 class LLMConfig:
-    model:           str = "gpt-5.4"
+    model:           str = "gpt-5.5"
     api_key_path:    str = "api_keys/api_keys.json"
     max_tool_depth:  int = 3
-    max_history_len: int = 12
+    max_history_len: int = 15
 
 
 # ---------------------------------------------------------------------------

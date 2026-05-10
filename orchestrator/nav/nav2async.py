@@ -16,6 +16,7 @@ from rclpy.node import Node
 from nav2_msgs.action import NavigateToPose
 from geometry_msgs.msg import PoseStamped
 from action_msgs.msg import GoalStatus
+import rclpy
 
 _log = logging.getLogger("sage.robot")
 
@@ -170,7 +171,7 @@ class Nav2AsyncBridge(Node):
     ) -> PoseStamped:
         pose = PoseStamped()
         pose.header.frame_id = frame_id or "map"
-        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.header.stamp = rclpy.time.Time().to_msg()
         pose.pose.position.x = float(x)
         pose.pose.position.y = float(y)
         pose.pose.orientation.x = float(ox)
