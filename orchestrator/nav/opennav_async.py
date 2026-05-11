@@ -400,7 +400,7 @@ class OpenNavDockingBridge(Node):
 
     def _step_spin_search(
         self,
-        half_sweep_rad: float = math.radians(45),
+        half_sweep_rad: float = math.radians(180),
         step_rad: float = math.radians(15),
         settle_s: float = 1.0,
         rotation_speed: float = 0.7,

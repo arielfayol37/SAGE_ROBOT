@@ -1,7 +1,17 @@
 from django.contrib import admin, messages
 from .models import Source, Chunk, EmailRecipient
 from .ingest import ingest_source
+from django.contrib.postgres.search import SearchVector
 from django.db.models import Count
+
+@admin.action(description="Rebuild search vectors (no re-ingest, no API calls)")
+def rebuild_search_vectors(modeladmin, request, queryset):
+    """Populate search_vector from existing search_text — fast, no embedding cost."""
+    count = Chunk.objects.filter(source__in=queryset).update(
+        search_vector=SearchVector("search_text", config="english")
+    )
+    messages.success(request, f"Rebuilt search vectors for {count} chunk(s).")
+
 
 @admin.action(description="Ingest selected sources (replace chunks)")
 def ingest_selected(modeladmin, request, queryset):
@@ -24,7 +34,7 @@ class SourceAdmin(admin.ModelAdmin):
     list_display = ("id", "type", "title", "enabled", "status", "updated_at")
     list_filter = ("type", "enabled", "status")
     search_fields = ("title", "location")
-    actions = [ingest_selected]
+    actions = [ingest_selected, rebuild_search_vectors]
     readonly_fields = ("status", "last_error", "created_at", "updated_at")
 
     def save_model(self, request, obj, form, change):

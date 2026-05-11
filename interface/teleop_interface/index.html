@@ -171,8 +171,16 @@
 
   /* ------- Streams & WS ------- */
   const HOST = location.hostname || "JETSON_IP_HERE"; // set if opening file:// on phone
-  document.getElementById('cam').src =
-    "http://" + HOST + ":8080/stream?topic=/image_raw&type=mjpeg&width=480&height=270&quality=50";
+  // Cache-bust with a timestamp so browser never reuses a dead MJPEG connection on reload.
+  const cam = document.getElementById('cam');
+  function connectCam() {
+    cam.src = "http://" + HOST + ":8080/stream?topic=/image_raw&type=mjpeg&width=480&height=270&quality=50&_t=" + Date.now();
+  }
+  connectCam();
+  cam.addEventListener('error', () => setTimeout(connectCam, 2000));
+  // Periodic watchdog: MJPEG stalls silently (no error event) when the server
+  // removes the stream. Force a reconnect every 30s as a safety net.
+  setInterval(() => { if (!document.hidden) connectCam(); }, 5000);
 
   const ws = new WebSocket("ws://" + HOST + ":8765" + "/ws/teleop");
   const statusEl = document.getElementById('status');
@@ -186,8 +194,8 @@
   }
 
   /* ------- Caps / speed scale (no persistence) ------- */
-  const MAX_X_BASE = 2;     // m/s
-  const MAX_Z_BASE = 1.5;   // rad/s
+  const MAX_X_BASE = 1.0;     // m/s
+  const MAX_Z_BASE = 1.0;   // rad/s
   let speedScale = 0.5;     // 0..1 (session only)
   const speedEl = document.getElementById('speedScale');
   const speedPct = document.getElementById('speedPct');
