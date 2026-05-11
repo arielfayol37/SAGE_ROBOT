@@ -178,6 +178,9 @@
   }
   connectCam();
   cam.addEventListener('error', () => setTimeout(connectCam, 2000));
+  // Periodic watchdog: MJPEG stalls silently (no error event) when the server
+  // removes the stream. Force a reconnect every 30s as a safety net.
+  setInterval(() => { if (!document.hidden) connectCam(); }, 5000);
 
   const ws = new WebSocket("ws://" + HOST + ":8765" + "/ws/teleop");
   const statusEl = document.getElementById('status');
