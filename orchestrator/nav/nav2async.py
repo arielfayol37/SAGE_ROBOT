@@ -9,7 +9,7 @@ event dispatcher.
 from __future__ import annotations
 
 import logging
-import time
+import threading
 from typing import Any, Callable, Dict, Optional
 
 from rclpy.action import ActionClient
@@ -42,8 +42,8 @@ class Nav2AsyncBridge(Node):
     def __init__(
         self,
         enqueue_arrival: Callable[[str], None],
-        enqueue_failure: Callable[[str, str], None],  
-    ) -> None:  
+        enqueue_failure: Callable[[str, str], None],
+    ) -> None:
         super().__init__("nav2_llm_bridge_async")
         self._action_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
         self._goal_handle: Optional[Any] = None
@@ -53,13 +53,11 @@ class Nav2AsyncBridge(Node):
         self.last_feedback: Dict[str, Any] = {}
         self._enqueue_arrival = enqueue_arrival
         self._enqueue_failure = enqueue_failure
-        self._goal_start_time: float = 0.0
-        self._timeout_cancel: bool = False
-        self._nav_timeout_s: float = 60.0   # beyond this the TF buffer is stale
         self._pending_goal: Optional[NavigateToPose.Goal] = None
         self._pending_location: Optional[str] = None
         self._goal_retry_count: int = 0
         self._max_goal_retries: int = 2
+
     # -- public API ----------------------------------------------------
 
     def set_goal(
@@ -76,8 +74,6 @@ class Nav2AsyncBridge(Node):
         """
         self.current_target = location_name
         self.status = self.STATUS_NAVIGATING
-        self._goal_start_time = time.monotonic()
-        self._timeout_cancel = False
 
         # Cancel any in-flight goal
         if self._goal_handle is not None:
@@ -122,17 +118,6 @@ class Nav2AsyncBridge(Node):
                 "distance_remaining": getattr(fb, "distance_remaining", 0.0),
                 "recoveries": getattr(fb, "number_of_recoveries", 0),
             }
-            # Guard against TF extrapolation: goal timestamp becomes stale after
-            # the TF buffer window (10s). Cancel before that causes Nav2 to seize.
-            if (self.status == self.STATUS_NAVIGATING
-                    and not self._timeout_cancel
-                    and time.monotonic() - self._goal_start_time > self._nav_timeout_s):
-                self._timeout_cancel = True
-                _log.warning(
-                    "Navigation timeout (%.0fs) to %s — cancelling to avoid TF staleness",
-                    self._nav_timeout_s, self.current_target,
-                )
-                self.cancel_goal()
         except Exception:
             _log.debug("Feedback parse error", exc_info=True)
 
@@ -146,7 +131,6 @@ class Nav2AsyncBridge(Node):
                         "Nav2 rejected goal to %s — retry %d/%d in 1.5 s",
                         self._pending_location, self._goal_retry_count, self._max_goal_retries,
                     )
-                    import threading
                     threading.Timer(1.5, self._retry_send_goal).start()
                 else:
                     self.status = self.STATUS_FAILED
@@ -190,20 +174,8 @@ class Nav2AsyncBridge(Node):
                     _log.error("enqueue_arrival callback failed", exc_info=True)
 
             elif status_code == GoalStatus.STATUS_CANCELED:
-                if self._timeout_cancel:
-                    self._timeout_cancel = False
-                    self.status = self.STATUS_FAILED
-                    _log.warning("Goal to %s timed out", self.current_target)
-                    try:
-                        self._enqueue_failure(
-                            self.current_target or "unknown",
-                            "Navigation timed out — robot may be stuck or the path is too long.",
-                        )
-                    except Exception:
-                        _log.error("enqueue_failure callback failed", exc_info=True)
-                else:
-                    self.status = self.STATUS_IDLE
-                    _log.info("Goal to %s was cancelled", self.current_target)
+                self.status = self.STATUS_IDLE
+                _log.info("Goal to %s was cancelled", self.current_target)
 
             else:
                 self.status = self.STATUS_FAILED
