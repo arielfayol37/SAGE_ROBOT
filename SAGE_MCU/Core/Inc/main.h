@@ -89,6 +89,10 @@ void Error_Handler(void);
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
+#define LED_PWM_Pin GPIO_PIN_0
+#define LED_PWM_GPIO_Port GPIOD
+#define Charging_State_Pin GPIO_PIN_5
+#define Charging_State_GPIO_Port GPIOB
 #define Motor_Encoder_2_A_Pin GPIO_PIN_6
 #define Motor_Encoder_2_A_GPIO_Port GPIOB
 #define Motor_Encoder_2_B_Pin GPIO_PIN_7
