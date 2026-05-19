@@ -50,8 +50,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "MANUFACTURING_LAB": {
         "frame_id": "map",
-        "x": 25.077194213867188, "y": 39.90303421020508,
-        "ox": 0.0, "oy": 0.0, "oz": 0.6405226761724656, "ow": 0.7679392562624096,
+        "x": 25.354145829075897, "y": 40.03109714441602,
+        "ox": 0.0, "oy": 0.0, "oz": -0.999696411794739, "ow": 0.024639079624119254,
         "description": (
             "Manufacturing Lab, a student space for manufacturing and "
             "fabrication projects."
@@ -67,8 +67,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "CLEAN_ROOM": {
         "frame_id": "map",
-        "x": -0.44752734899520874, "y": 40.4676628112793,
-        "ox": 0.0, "oy": 0.0, "oz": -0.9996298743603909, "ow": 0.027205041559041618,
+        "x": -0.977655408505438, "y": 40.40246846855082,
+        "ox": 0.0, "oy": 0.0, "oz": -0.688859722470819, "ow": 0.7248946701124421,
         "description": (
             "Clean Room, a controlled environment for sensitive fabrication "
             "and research work."
@@ -76,8 +76,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "ELECTRICAL_AND_COMPUTER_LAB_1": {
         "frame_id": "map",
-        "x": -7.211533069610596, "y": 47.88065719604492,
-        "ox": 0.0, "oy": 0.0, "oz": -0.707168915604687, "ow": 0.7070446413080939,
+        "x": -7.09791059170474, "y": 47.43154447034177,
+        "ox": 0.0, "oy": 0.0, "oz": -0.005145536354438227, "ow": 0.9999867616401855,
         "description": (
             "ECE Lab 1, a student space for ECE students to work on projects "
             "and collaborate.  Many workbenches and tools are available."
@@ -85,8 +85,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "ELECTRICAL_AND_COMPUTER_LAB_2": {
         "frame_id": "map",
-        "x": -7.666999340057373, "y": 35.37744140625,
-        "ox": 0.0, "oy": 0.0, "oz": 0.731044131015225, "ow": 0.6823301829086813,
+        "x": -7.600417217376809, "y": 35.85051544223395,
+        "ox": 0.0, "oy": 0.0, "oz": -0.6050726392700614, "ow": 0.7961702714914456,
         "description": (
             "ECE Lab 2, a student space for ECE students to work on projects "
             "and collaborate.  Many workbenches and tools are available."
@@ -120,8 +120,8 @@ WAYPOINTS: Dict[str, Waypoint] = {
     },
     "BATHROOMS": {
         "frame_id": "map",
-        "x": 22.28849220275879, "y": 64.49700164794922,
-        "ox": 0.0, "oy": 0.0, "oz": -0.6543723827346279, "ow": 0.7561724569925868,
+        "x": 22.099501099705403, "y": 64.2079694431545,
+        "ox": 0.0, "oy": 0.0, "oz": -0.9988520440256575, "ow": 0.04790192215105649,
         "description": (
             "Bathrooms, the nearest restroom facilities in the building."
         ),
