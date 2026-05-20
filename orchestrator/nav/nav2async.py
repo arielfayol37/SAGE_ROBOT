@@ -9,6 +9,7 @@ event dispatcher.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Callable, Dict, Optional
 
 from rclpy.action import ActionClient
@@ -41,8 +42,8 @@ class Nav2AsyncBridge(Node):
     def __init__(
         self,
         enqueue_arrival: Callable[[str], None],
-        enqueue_failure: Callable[[str, str], None],  
-    ) -> None:  
+        enqueue_failure: Callable[[str, str], None],
+    ) -> None:
         super().__init__("nav2_llm_bridge_async")
         self._action_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
         self._goal_handle: Optional[Any] = None
@@ -52,6 +53,11 @@ class Nav2AsyncBridge(Node):
         self.last_feedback: Dict[str, Any] = {}
         self._enqueue_arrival = enqueue_arrival
         self._enqueue_failure = enqueue_failure
+        self._pending_goal: Optional[NavigateToPose.Goal] = None
+        self._pending_location: Optional[str] = None
+        self._goal_retry_count: int = 0
+        self._max_goal_retries: int = 2
+
     # -- public API ----------------------------------------------------
 
     def set_goal(
@@ -76,13 +82,17 @@ class Nav2AsyncBridge(Node):
             except Exception:
                 _log.warning("Failed to cancel previous goal", exc_info=True)
 
-        if not self._action_client.wait_for_server(timeout_sec=0.5):
+        if not self._action_client.wait_for_server(timeout_sec=2.0):
             self.status = self.STATUS_FAILED
             return "Nav2 action server not available."
 
         pose = self._build_pose(frame_id, x, y, ox, oy, oz, ow)
         goal = NavigateToPose.Goal()
         goal.pose = pose
+
+        self._pending_goal = goal
+        self._pending_location = location_name
+        self._goal_retry_count = 0
 
         send_future = self._action_client.send_goal_async(
             goal, feedback_callback=self._on_feedback,
@@ -115,8 +125,23 @@ class Nav2AsyncBridge(Node):
         try:
             goal_handle = future.result()
             if not goal_handle or not goal_handle.accepted:
-                self.status = self.STATUS_FAILED
-                _log.warning("Nav2 goal was rejected")
+                if self._goal_retry_count < self._max_goal_retries and self._pending_goal is not None:
+                    self._goal_retry_count += 1
+                    _log.warning(
+                        "Nav2 rejected goal to %s — retry %d/%d in 1.5 s",
+                        self._pending_location, self._goal_retry_count, self._max_goal_retries,
+                    )
+                    threading.Timer(1.5, self._retry_send_goal).start()
+                else:
+                    self.status = self.STATUS_FAILED
+                    _log.warning("Nav2 rejected goal to %s (all retries exhausted)", self._pending_location)
+                    try:
+                        self._enqueue_failure(
+                            self._pending_location or "unknown",
+                            "Nav2 rejected the navigation goal — the server may still be resetting.",
+                        )
+                    except Exception:
+                        _log.error("enqueue_failure callback failed", exc_info=True)
                 return
             self._goal_handle = goal_handle
             result_future = goal_handle.get_result_async()
@@ -124,6 +149,15 @@ class Nav2AsyncBridge(Node):
         except Exception:
             self.status = self.STATUS_FAILED
             _log.error("Goal response error", exc_info=True)
+
+    def _retry_send_goal(self) -> None:
+        if self._pending_goal is None or self.status != self.STATUS_NAVIGATING:
+            return
+        _log.info("Retrying goal to %s", self._pending_location)
+        send_future = self._action_client.send_goal_async(
+            self._pending_goal, feedback_callback=self._on_feedback,
+        )
+        send_future.add_done_callback(self._on_goal_response)
 
     def _on_result(self, future: Any) -> None:
         self._goal_handle = None

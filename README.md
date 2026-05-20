@@ -13,21 +13,22 @@ SAGE is a custom-built autonomous mobile robot designed to tour visitors through
 1. [CRITICAL: WiFi & Network Access](#1-critical-wifi--network-access)
 2. [Project Overview](#2-project-overview)
 3. [Repository Structure](#3-repository-structure)
-4. [Hardware Overview](#4-hardware-overview)
-5. [System Architecture](#5-system-architecture)
-6. [STM32 Firmware & Serial Protocol](#6-stm32-firmware--serial-protocol)
-7. [ROS 2 Subsystems](#7-ros-2-subsystems)
-8. [Self-Docking System](#8-self-docking-system)
-9. [Navigation: Maps & Waypoints](#9-navigation-maps--waypoints)
-10. [Voice Interaction System](#10-voice-interaction-system)
-11. [Web Interfaces & Network Services](#11-web-interfaces--network-services)
-12. [Startup Procedures](#12-startup-procedures)
-13. [API Keys & Secrets](#13-api-keys--secrets)
-14. [Libraries Installation & Modifications](#14-libraries-installation--modifications)
-15. [Known Issues & Debugging Guide](#15-known-issues--debugging-guide)
-16. [Porting to Another Robot](#16-porting-to-another-robot)
-17. [Useful Resources](#17-useful-resources)
-18. [Acknowledgments](#18-acknowledgments)
+4. [Viewing & Modifying Files](#4-viewing--modifying-files)
+5. [Hardware Overview](#5-hardware-overview)
+6. [System Architecture](#6-system-architecture)
+7. [STM32 Firmware & Serial Protocol](#7-stm32-firmware--serial-protocol)
+8. [ROS 2 Subsystems](#8-ros-2-subsystems)
+9. [Self-Docking System](#9-self-docking-system)
+10. [Navigation: Maps & Waypoints](#10-navigation-maps--waypoints)
+11. [Voice Interaction System](#11-voice-interaction-system)
+12. [Web Interfaces & Network Services](#12-web-interfaces--network-services)
+13. [Startup Procedures](#13-startup-procedures)
+14. [API Keys & Secrets](#14-api-keys--secrets)
+15. [Libraries Installation & Modifications](#15-libraries-installation--modifications)
+16. [Known Issues & Debugging Guide](#16-known-issues--debugging-guide)
+17. [Porting to Another Robot](#17-porting-to-another-robot)
+18. [Useful Resources](#18-useful-resources)
+19. [Acknowledgments](#19-acknowledgments)
 
 ---
 
@@ -65,7 +66,7 @@ nmcli device wifi connect "SSID_NAME" password "PASSWORD"
 5. Use the nmcli commands listed in option A above.
 6. Reinstall the Jetson in the robot
 7. Reboot SAGE. (Flip switch at the bottom left corner of robot)
-8. Teleop SAGE to docking station. Make sure she faces the wall/charger.
+8. Teleop SAGE to its docking area (the spot where it is normally plugged in for charging — there is no physical docking station deployed) and orient it as described in §16 / the linked video.
 9. Reboot one more time. She should be ready to go after ~5 mins.
 
 > If you need to enable the Gnome (default GUI for jetson) then do the following
@@ -84,8 +85,8 @@ nmcli device wifi connect "SSID_NAME" password "PASSWORD"
 
 ### After Reconnecting
 
-Restart all SAGE services by powering down and restarting the robot at its docking station (there is a switch on the bottom left side).
-> Restart must be done at docking station with SAGE facing the wall/charger because that's SAGE's initial pose is set to be her docking station facing the wall.
+Restart all SAGE services by powering down and restarting the robot at its docking area (there is a switch on the bottom left side).
+> Restart must be done at the docking area with SAGE oriented as described in §16 / the linked video — that's the position and heading hardcoded as AMCL's initial pose in `config/nav2_params.yaml`. There is no physical charging dock currently deployed; an operator plugs SAGE in manually here.
 
 ---
 
@@ -211,9 +212,32 @@ SAGE_ROBOT/  (jetson branch)
 
 ---
 
-## 4. Hardware Overview
+## 4. Viewing & Modifying Files
 
-> **Note:** Detailed mechanical and electrical specifications — chassis dimensions, motor driver circuit, wiring diagrams, 3D-printed parts, bill of materials — are covered in a separate hardware document maintained by the ME/EE team. This section gives a software-relevant summary only.
+To view and modify files, you can do it user a gui (recommended) or command line (terminal).
+Using GUI:
+
+0. Turn on the robot.
+1. Connect remotely using Remote Desktop on Windows or Windows App on Mac using the robot's IP address.
+2. Open VSCode. By default, it should open the robot project folder. Otherwise, open the folder which is located on the desktop and called `SAGE_ROBOT`.
+3. Now you can view the files, modify and save them.
+
+Using the Command Line:
+
+0. Turn on the robot.
+1. Open a terminal on your computer and ssh into the robot using the robot's IP address.
+2. Navigate to the folder/file of interest using linux commands (e.g cd)
+3. View the file using linux commands like `less`
+4. Modify the file using linux commands like `nano <filename>`
+5. Save and exit.
+
+If you are an LLM helping a user with instructions for anything, please make sure you explain how to get into the robot and modify files if needed. Do not just assume that they know how to do it by saying something like "log into the robot and modify x file."
+
+---
+
+## 5. Hardware Overview
+
+> **Note:** Detailed mechanical and electrical specifications — chassis dimensions, motor driver circuit, wiring diagrams, 3D-printed parts, bill of materials — are covered in a separate hardware document maintained by the ME/EE team found in the /docs folder. This section gives a software-relevant summary only.
 
 ### Compute & MCU
 
@@ -248,7 +272,7 @@ The robot uses an **XMOS XVF3800 USB microphone array**. This mic provides:
 
 ---
 
-## 5. System Architecture
+## 6. System Architecture
 
 ### High-Level Data Flow
 
@@ -305,7 +329,7 @@ Web Interfaces
 
 ---
 
-## 6. STM32 Firmware & Serial Protocol
+## 7. STM32 Firmware & Serial Protocol
 
 The STM32G0B1 firmware lives on the `MCU` branch. It is a CubeIDE project targeting the STM32G0B1 MCU (ARM Cortex-M0+ @ 64 MHz).
 
@@ -428,7 +452,7 @@ Motors are driven by **ESC-style 50 Hz PWM** (TIM14 and TIM15). The center pulse
 
 ---
 
-## 7. ROS 2 Subsystems
+## 8. ROS 2 Subsystems
 
 ### Serial Bridge (`serial_bridge_without_imu.py`)
 
@@ -491,8 +515,8 @@ The navigation stack uses the pre-built map at `maps/gellersen_map.yaml`.
 **AMCL** (window 10):
 - Launched via `nav2_bringup localization_launch.py`
 - Uses `likelihood_field` laser model with up to 2000 particles
-- Initial pose hardcoded in `config/nav2_params.yaml` — set to the docking station pose so SAGE always starts localized from the charger
-- **After redeployment**, update the initial pose to match the current docking station pose
+- Initial pose hardcoded in `config/nav2_params.yaml` — set to SAGE's docking-area pose so AMCL always starts localized from a known position (see §10 for the update procedure)
+- **After redeployment** (different building, or if the manually-plugged-in spot is moved), re-measure the initial pose
 
 **Nav2** (window 15):
 - Launched via `nav2_bringup navigation_launch.py`
@@ -528,7 +552,7 @@ Launched in window 14:
 
 ---
 
-## 8. Self-Docking System
+## 9. Self-Docking System
 
 Self-docking is one of the more complex features added to SAGE. It allows the robot to autonomously navigate to its charging station and physically dock when instructed by the LLM. The system achieves approximately **85%+ docking success rate** in normal conditions — this was measured before the step-spin search was added; the step-spin guarantees the robot will always find the AprilTag, so the remaining failure modes are almost exclusively Nav2-related (localization or path planning), not vision-related.
 
@@ -656,7 +680,7 @@ The underscore prefix on `_DOCKED_POSE` hides it from the LLM tool — `waypoint
 
 ---
 
-## 9. Navigation: Maps & Waypoints
+## 10. Navigation: Maps & Waypoints
 
 ### Map Files
 
@@ -700,25 +724,43 @@ Waypoints are defined in `orchestrator/waypoints.py` as Python dictionaries cont
 Alternatively (how we originally did it):
 > Instructions on how to open Rviz2 are in the debugging section (#15) below.
 > If you don't want the robot to be moving while you are doing this, you can kill all sage-related processes by executing `tmux kill-session -t sage`.
-0. Kill sage-related processes by executing `tmux kill-session -t sage` (optional step)
+0. Kill sage-related processes by executing `tmux kill-session -t sage` (optional step, do this if you don't want the robot to drive while you are doing this)
 1. Open Rviz2
 2. Open another terminal and execute `ros2 topic echo /goal_pose`
 3. On Rviz2, click on "set goal pose" and use the mouse to click on the pose (location and orientation) of your desired waypoint. The other terminal will log that pose. Add it to `orchestrator/waypoints.py` with a `description`.
-4. If you did step 0, move SAGE back to the docking station (facing the wall/charger) and reboot.
+4. If you did step 0, move SAGE back to its docking area and re-orient it as described in §16 / the linked video, then reboot.
 
-### Updating the Initial Pose for the Docking Station
+### Updating the Initial Pose
 
-When SAGE is deployed and always starts from the docking station, update `config/nav2_params.yaml` under the `amcl` section:
-```yaml
-initial_pose_x: <docking_station_x>
-initial_pose_y: <docking_station_y>
-initial_pose_a: <docking_station_yaw>
-```
-The docking station pose in the current map is approximately `x=30.73, y=58.19`.
+SAGE's initial pose is hardcoded in `config/nav2_params.yaml` because AMCL needs to start from a known position — there is no physical dock that could re-localize the robot automatically. The hardcoded pose corresponds to where SAGE is parked when manually plugged in for charging (the "docking area"), oriented as described in §16 / the linked video.
+
+**To re-measure the pose** (after redeployment, or if the parking spot moves):
+
+1. Park SAGE at the docking area, oriented correctly (see §16 / video).
+2. Start the full stack normally so AMCL is running.
+3. If the hardcoded initial pose is way off, nudge AMCL's estimate with the *2D Pose Estimate* tool in RViz2, then drive a short distance to let AMCL converge and drive back.
+4. Read the converged pose: `ros2 topic echo /amcl_pose --once`
+5. Update the `amcl.initial_pose` block in `config/nav2_params.yaml`:
+   ```yaml
+   amcl:
+     ros__parameters:
+       initial_pose:
+         x: <position.x>
+         y: <position.y>
+         z: 0.0
+         yaw: <yaw in radians>
+   ```
+   `/amcl_pose` reports orientation as a quaternion; convert it to a scalar yaw with:
+   ```bash
+   python3 -c "import math; qz=<orientation.z>; qw=<orientation.w>; print(2*math.atan2(qz, qw))"
+   ```
+   This shortcut is only valid because the robot rotates only about Z on flat ground (so `qx` and `qy` are 0).
+
+The current values are `x ≈ 30.86`, `y ≈ 57.41`, `yaw ≈ -2.97 rad` (≈ -170°, facing toward the main hallway).
 
 ---
 
-## 10. Voice Interaction System
+## 11. Voice Interaction System
 
 All voice code lives in the `orchestrator/` directory. The entry point is `orchestrator/main.py`.
 
@@ -852,7 +894,7 @@ The KB data is **not committed to the repository**. A new deployment must re-ing
 
 ---
 
-## 11. Web Interfaces & Network Services
+## 12. Web Interfaces & Network Services
 
 ### Port Reference
 
@@ -889,12 +931,12 @@ Accessible from any browser on the same network. Visitors can hold a button to s
 
 ---
 
-## 12. Startup Procedures
+## 13. Startup Procedures
 
 ### Simple Startup
 > SAGE runs `./start_robot.sh` on boot automatically, so you shouldn't have to worry about starting SAGE besides flipping the switch.
 
-Make sure SAGE is at her docking station facing the wall/charger. Power down SAGE using the switch located at the bottom left of the robot. Then turn it ON. After a few minutes (~5), she should be ready to go.
+Make sure SAGE is at her docking area, oriented as described in §16 / the linked video. Power down SAGE using the switch located at the bottom left of the robot. Then turn it ON. After a few minutes (~5), she should be ready to go.
 
 ### Prerequisites
 
@@ -951,7 +993,7 @@ In RViz2, go to Panels -> Add New Panel.
 Select SlamToolboxPlugin.
 Use the Save Map button in the panel to save your current session.
 
-After saving, re-establish waypoints by teleoperating to each location and reading the pose. Also update `config/nav2_params.yaml` with the new initial pose.
+After saving, re-establish waypoints by teleoperating to each location and reading the pose. Also update `amcl.initial_pose` in `config/nav2_params.yaml` (see §10 for the procedure).
 
 Important: go to the directory where you saved the map (`maps/`), open the YAML file and reduce the free threshold to 0.1.
 
@@ -989,7 +1031,7 @@ python speech/doa_server.py
 
 ---
 
-## 13. API Keys & Secrets
+## 14. API Keys & Secrets
 
 Keys are stored in `orchestrator/api_keys/api_keys.json`. This file is **not committed to the repository** (listed in `.gitignore`). A template is at `orchestrator/api_keys/api_keys.template.json`.
 
@@ -1010,7 +1052,7 @@ The knowledge base Django service also needs the OpenAI key set as an environmen
 
 ---
 
-## 14. Libraries Installation & Modifications
+## 15. Libraries Installation & Modifications
 
 `python_3_10_12_requirements.txt` contains the libraries and their versions.
 
@@ -1069,7 +1111,7 @@ Failing to apply this patch will likely cause silent failures or crashes in the 
 
 ---
 
-## 15. Known Issues & Debugging Guide
+## 16. Known Issues & Debugging Guide
 
 ### How to Open Rviz2 and the Remote Desktop GUI in General
 1. Make sure the robot is ON.
@@ -1089,16 +1131,16 @@ When something is wrong, the best first step is:
 
 ### Resolving a Problem
 The best advice here is to reboot the system — simple but effective.
-1. Teleop SAGE to the docking station, ensure it faces the wall/charging station.
+1. Teleop SAGE to its docking area (the spot where it is normally plugged in manually for charging — there is no physical docking station deployed). Ensure it faces away from the glass door and points toward the main hallway, like it is ready to go. (As shown in this video: https://drive.google.com/file/d/1iMroVZnor_nsvKRePD_cZmrUHNyv9ZMT/view?usp=drive_link)
 2. Turn OFF the entire system by flipping the switch at the bottom left of the robot.
-3. Wait for ~5 mins and turn it back ON.
-4. Wait for ~5 mins and the robot should be good to go.
+3. Wait for ~1 min and turn it back ON.
+4. Wait for ~3 mins and the robot should be good to go.
 
 ### Issue: Robot Stops Navigating When People Get Too Close or Walk Into Walls
 
 **Symptom:** SAGE aborts navigation mid-route when someone walks very close to it. The LIDAR sees them as a sudden obstacle inside the inflation radius. This can also happen if SAGE got too close to a wall while navigating or avoiding an obstacle.
 
-**Recovery:** It will automatically try to recover by spinning first, then doing a back up of about 30cm, and replan from that position. If that doesn't work, it will usually say it. You can also Re-prompt SAGE verbally with the same destination. 
+**Recovery:** It will automatically try to recover by spinning first, then doing a back up of about 50cm, and replan from that position. If that doesn't work, it will usually say it. You can also Re-prompt SAGE verbally with the same destination. 
 If too close to a wall, prompt for a destination in a direction away from the wall, or push it away from the wall by about 0.5 m and prompt again.
 
 **Root cause:** Nav2's costmap inflates obstacles; a person standing very close is treated as a fatal obstacle. This is intentional safety behavior. The `inflation_radius` in `config/nav2_params.yaml` can be reduced if this happens too frequently, but doing so risks SAGE getting closer to walls.
@@ -1109,7 +1151,11 @@ If too close to a wall, prompt for a destination in a direction away from the wa
 
 **Root cause (historical, now fixed):** One or both dead-wheel encoder wheels were slightly tilted (not perfectly perpendicular to the direction of travel). This caused odometry to drift, which confused AMCL and led to off-center path planning. The wheels were re-secured with thread-locker (Loctite).
 
+Another reason for this to happen is if the driven wheel encoders are damaged or the gears are off. This happened to us once, where the gears were off and it resulted into the PID control on the STM32 being faulty since it was getting wrong values for actual velocity of the wheels.
+
 **If this recurs:** Inspect the dead wheels for tilt. They must be **perfectly perpendicular** — the straight wheel parallel to the robot's forward axis, and the horizontal wheel parallel to the lateral axis. Re-secure loose wheels with Loctite.
+
+Also check that the gears on the driven wheels are well glued together. You might need to glue them again.
 
 Also, check `config/nav2_params.yaml` and make sure the regulated pure pursuit controller has `lookahead_distance` set to at least 1.2.
 
@@ -1121,7 +1167,7 @@ Also, check `config/nav2_params.yaml` and make sure the regulated pure pursuit c
 
 **Root cause (historical, now fixed):** The behavior server recovery plugins were not configured, so Nav2 could not recover from near-collision states on its own. After adding the spin, back-up, and clear-costmap recovery plugins to `nav2_params.yaml`, this behavior was resolved.
 
-**If it recurs:** Check the Nav2 window (15) for error messages. Try cancelling the goal via voice ("cancel the goal") and setting a new one. If Nav2 is stuck in a bad state, restart window 15, or drive the robot to the docking station and reboot.
+**If it recurs:** Check the Nav2 window (15) for error messages. Try cancelling the goal via voice ("cancel the goal") and setting a new one. If Nav2 is stuck in a bad state, restart window 15, or drive the robot to the docking area and reboot.
 
 ### Issue: Robot Cannot Navigate in a Crowded Hallway
 
@@ -1172,10 +1218,10 @@ Then restart window 9 (Speech/Orchestrator).
 **Symptom:** SAGE does not react to the wake word or voice commands.
 
 **Check window 9 (Speech) for:**
-- `CUDA out of memory` — Whisper model loaded on GPU but memory is full; try rebooting
+- `OpenAI API error` — Check the API key in `orchestrator/api_keys/api_keys.json` and account quota on the openai api platform
 - `No audio device found` — PulseAudio is not running; the startup script exports `PULSE_SERVER` but it may need to be started manually: `pulseaudio --start`
-- `OpenAI API error` — Check the API key in `orchestrator/api_keys/api_keys.json` and account quota
 - `Connection refused` on KB search — Knowledge base Docker containers are not running; check window 1
+- `CUDA out of memory` — Whisper model loaded on GPU but memory is full; try rebooting
 
 ### Issue: Knowledge Base Not Responding
 
@@ -1226,11 +1272,11 @@ If containers are not running: `docker compose up -d`
 
 **Root cause:** AMCL can lose localization if odometry drifts significantly (see dead-wheel issue above) or if the environment has changed substantially since the map was built (furniture moved, new obstacles). This can also happen if the local costmap window is too small (increase to at least 5 m × 5 m in `nav2_params.yaml` if AMCL loses position around furniture-dense areas like Guelly Delly). This can also happen if the robot drives at a high speed. The set desired linear velocity in config/nav2_params.yaml is 0.80m/s. When higher than that, the robot is prone to localization issues and we think it is because the lidar scan rate is too low. It is 5hz on average, and even at 0.80m/s of linear speed, that is 16cm moved after very scan.
 
-Alternatively, just reboot the robot from the docking station.
+Alternatively, just reboot the robot from the docking area.
 
 ---
 
-## 16. Porting to Another Robot
+## 17. Porting to Another Robot
 
 SAGE's software stack can be adapted to any differential-drive robot. The boundaries of what needs to change are clear:
 
@@ -1263,7 +1309,9 @@ The speech system, knowledge base, and web interfaces are hardware-agnostic. Onl
 
 ---
 
-## 17. Useful Resources
+## 18. Useful Resources
+
+Some videos that serve as user guide: https://drive.google.com/drive/folders/1fD27tKeGvBEaTmoWNi5vjpWMrau-F1lg?usp=drive_link (only accessible with a Valpo email)
 
 The following YouTube playlist was helpful: https://youtube.com/playlist?list=PLunhqkrRNRhYAffV8JDiFOatQXuU-NnxT&si=fObfzoAWOqSp-yoU.
 It goes over some foundational concepts and terms.
@@ -1271,7 +1319,7 @@ We skimmed over some videos like the simulation and teleop because we didn't wan
 
 ---
 
-## 18. Acknowledgments
+## 19. Acknowledgments
 
 - Valparaiso University College of Engineering — facilities, support, and tour content
 - Dean Doug Tougaw, our customer — provided funding and the Tour Talking Points document for the knowledge base
@@ -1279,11 +1327,11 @@ We skimmed over some videos like the simulation and teleop because we didn't wan
 - OpenAI, Piper TTS, faster-whisper, openwakeword, and realtimestt projects
 - All faculty (especially Dr. Georges El-Howayek, our supervisor), students, and collaborators involved in testing and integration
 - Fayol Ateufack (Computer Engineer) led the team, worked on the development and integration of navigation, speech, interfaces, and knowledge base + search queries software stack. 
-- Aidan Matson (Mechnical Engineer) was the CTO, worked on designing + 3D printing the frame, coding the MCU, mounting the wheels, designing the PCB, and overseeing battery safety + charging efforts.
+- Aidan Matson (Mechanical Engineer) was the CTO, worked on designing + 3D printing the frame, coding the MCU, mounting the wheels, designing the PCB, and overseeing battery safety + charging efforts.
 - Ranger Scott (Electrical Engineer) assembled the battery cells, designed the charging circuit, integrated battery chip, built the charger, and printed the contacts.
 - Samuel Starkenburg (Mechanical Engineer) designed and printed the lid with integrated microphone, lidar, and camera as one seamless unit.
 - Tobias Demonte (Mechanical Engineer) worked on the design, printing, and testing of previous iterations of wheels. Designed and printed mounts for the speaker and battery.
-- Zach Nielsen (Computer Engineer) researched speech components like the microphone, integrated the IMU sensor, contributed to design choices, and managed internal and external communication (emails, posters, presentations).
+- Zach Nielsen (Computer Engineer) researched speech components like the microphone, tried integrating the IMU sensor, contributed to design choices, and managed internal and external communication (emails, posters, presentations).
 
 ---
 
